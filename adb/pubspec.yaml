@@ -28,7 +28,7 @@ flutter:
   plugin:
     platforms:
       android:
-        package: com.example.adb
+        package: com.developedforme.adb
         pluginClass: AdbPlugin
 
   # To add assets to your plugin package, add an assets section, like this:

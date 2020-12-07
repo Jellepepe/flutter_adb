@@ -1,6 +1,8 @@
-package com.example.adb;
+package com.developedforme.adb;
 
 import androidx.annotation.NonNull;
+
+import android.content.Context;
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.plugin.common.MethodCall;
@@ -8,6 +10,7 @@ import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
 import io.flutter.plugin.common.MethodChannel.Result;
 import io.flutter.plugin.common.PluginRegistry.Registrar;
+import io.flutter.util.PathUtils;
 
 /** AdbPlugin */
 public class AdbPlugin implements FlutterPlugin, MethodCallHandler {
@@ -16,10 +19,12 @@ public class AdbPlugin implements FlutterPlugin, MethodCallHandler {
   /// This local reference serves to register the plugin with the Flutter Engine and unregister it
   /// when the Flutter Engine is detached from the Activity
   private MethodChannel channel;
+  private Context context;
 
   @Override
   public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
     channel = new MethodChannel(flutterPluginBinding.getFlutterEngine().getDartExecutor(), "adb");
+    context = flutterPluginBinding.getApplicationContext();
     channel.setMethodCallHandler(this);
   }
 
@@ -41,6 +46,9 @@ public class AdbPlugin implements FlutterPlugin, MethodCallHandler {
   public void onMethodCall(@NonNull MethodCall call, @NonNull Result result) {
     if (call.method.equals("getPlatformVersion")) {
       result.success("Android " + android.os.Build.VERSION.RELEASE);
+    } else if (call.method.equals("attemptAdb")) {
+      attemptAdb();
+      result.success("Attempted adb");
     } else {
       result.notImplemented();
     }
@@ -49,5 +57,25 @@ public class AdbPlugin implements FlutterPlugin, MethodCallHandler {
   @Override
   public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
     channel.setMethodCallHandler(null);
+  }
+
+  public void attemptAdb() {
+    System.out.println("trying adb!!!");
+    Thread thread = new Thread(() -> {
+      try {
+        AdbManager selfAdb = AdbManager.initInstance(context.getFilesDir(), "localhost");
+        //selfAdb.executeCmd("pm grant " + BuildConfig.APPLICATION_ID + " android.permission.READ_LOGS");
+        selfAdb.executeCmd("wm overscan 0,0,0,100");
+      } catch (Exception e) {
+        System.out.println(e);
+      }
+    });
+    thread.start();
+    try {
+      thread.join();
+    } catch (InterruptedException e) {
+      System.out.println(e);
+    }
+    
   }
 }

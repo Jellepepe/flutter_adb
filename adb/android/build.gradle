@@ -1,4 +1,4 @@
-group 'com.example.adb'
+group 'com.developedforme.adb'
 version '1.0'
 
 buildscript {
@@ -23,11 +23,20 @@ apply plugin: 'com.android.library'
 
 android {
     compileSdkVersion 28
-
+	
+	compileOptions {
+		sourceCompatibility JavaVersion.VERSION_1_8
+		targetCompatibility JavaVersion.VERSION_1_8
+	}
     defaultConfig {
-        minSdkVersion 16
+        minSdkVersion 28
     }
     lintOptions {
         disable 'InvalidPackage'
     }
+}
+
+dependencies { 
+    implementation fileTree(dir: "libs", include: ["*.jar"])
+    implementation files('libs/commons-codec-1.8.jar')
 }
