@@ -12,8 +12,8 @@ class Adb {
     return version;
   }
 
-  static Future<String> get attemptAdb async {
-    final String adbResult = await _channel.invokeMethod('attemptAdb');
+  static Future<String> attemptAdb(String command) async {
+    final String adbResult = await _channel.invokeMethod('attemptAdb',{'command':command});
     return adbResult;
   }
 }

@@ -14,22 +14,24 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  String _platformVersion = 'Unknown';
+  String _adbResponse = 'Unknown';
+  Color _color = Colors.white;
+  Stopwatch _sw = new Stopwatch();
+  int _delay = 0;
 
   @override
   void initState() {
     super.initState();
-    initPlatformState();
   }
 
   // Platform messages are asynchronous, so we initialize in an async method.
-  Future<void> initPlatformState() async {
-    String platformVersion;
+  Future<void> sendAdbCommand(String command) async {
+    String adbResponse;
     // Platform messages may fail, so we use a try/catch PlatformException.
     try {
-      platformVersion = await Adb.attemptAdb;
+      adbResponse = await Adb.attemptAdb(command);
     } on PlatformException {
-      platformVersion = 'Failed to get platform version.';
+      adbResponse = 'Failed to get platform version.';
     }
 
     // If the widget was removed from the tree while the asynchronous platform
@@ -38,7 +40,7 @@ class _MyAppState extends State<MyApp> {
     if (!mounted) return;
 
     setState(() {
-      _platformVersion = platformVersion;
+      _adbResponse = adbResponse;
     });
   }
 
@@ -46,13 +48,49 @@ class _MyAppState extends State<MyApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       home: Scaffold(
+        backgroundColor: _color,
         appBar: AppBar(
           title: const Text('Plugin example app'),
         ),
-        body: Center(
-          child: Text('Adb result: $_platformVersion\n'),
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            RawMaterialButton(
+              onPressed: () {
+                setState(() {
+                  _delay = _sw.elapsedMilliseconds;
+                  _sw.stop();
+                  _sw.reset();
+                  _color = Colors.green;
+                  Future.delayed(Duration(seconds: 2)).then(
+                    (_) => setState(() {
+                    _color = Colors.white;
+                    }));
+                });
+              },
+            ),
+            Column(
+              children: [
+                Center(
+                  child: Text('Adb result: $_adbResponse\n'),
+                ),
+                IconButton(
+                  icon: Icon(Icons.play_arrow),
+                  iconSize: 64,
+                  onPressed: () {
+                    _delay = 0;
+                    _sw.start();
+                    sendAdbCommand("input tap 300 300");
+                  }
+                ),
+                Center(
+                  child: Text('Measured adb delay: ' + ((_delay == 0) ? "Unknown" : _delay.toString() + 'ms') + '\n'),
+                ),
+              ]
+            ),
+          ]
         ),
-      ),
+      )
     );
   }
 }

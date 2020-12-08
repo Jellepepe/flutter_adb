@@ -49,7 +49,7 @@ public class AdbManager {
         shellStream = adbConnection.open("shell:");
     }
 
-    private void disconnect() throws IOException {
+    public void disconnect() throws IOException {
         shellStream.close();
         adbConnection.close();
         socket.close();

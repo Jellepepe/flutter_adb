@@ -47,8 +47,9 @@ public class AdbPlugin implements FlutterPlugin, MethodCallHandler {
     if (call.method.equals("getPlatformVersion")) {
       result.success("Android " + android.os.Build.VERSION.RELEASE);
     } else if (call.method.equals("attemptAdb")) {
-      attemptAdb();
-      result.success("Attempted adb");
+      String command = call.argument("command");
+      String adbResult = attemptAdb(command);
+      result.success("trying adb command:\n" + command + "\nresult:\n" + adbResult);
     } else {
       result.notImplemented();
     }
@@ -59,23 +60,43 @@ public class AdbPlugin implements FlutterPlugin, MethodCallHandler {
     channel.setMethodCallHandler(null);
   }
 
-  public void attemptAdb() {
-    System.out.println("trying adb!!!");
-    Thread thread = new Thread(() -> {
-      try {
-        AdbManager selfAdb = AdbManager.initInstance(context.getFilesDir(), "localhost");
-        //selfAdb.executeCmd("pm grant " + BuildConfig.APPLICATION_ID + " android.permission.READ_LOGS");
-        selfAdb.executeCmd("wm overscan 0,0,0,100");
-      } catch (Exception e) {
-        System.out.println(e);
-      }
-    });
+  public String attemptAdb(String command) {
+    System.out.println("trying adb command: " + command);
+    String returnString = "Successful";
+    AdbThread adbThread = new AdbThread(command);
+    Thread thread = new Thread(adbThread);
     thread.start();
     try {
       thread.join();
+      return adbThread.getResult();
     } catch (InterruptedException e) {
-      System.out.println(e);
+      return "external error: " + e;
     }
     
+  }
+
+  public class AdbThread implements Runnable {
+    private volatile String returnString;
+    private final String command;
+    AdbThread(String command) {
+      this.command = command;
+    }
+
+    @Override
+    public void run() {
+      try {
+        AdbManager selfAdb = AdbManager.initInstance(context.getFilesDir(), "localhost");
+        //selfAdb.executeCmd("pm grant " + BuildConfig.APPLICATION_ID + " android.permission.READ_LOGS");
+        selfAdb.executeCmd(this.command);
+        selfAdb.disconnect();
+      } catch (Exception e) {
+        returnString = "internal error: " + e;
+        System.out.println("internal error: " + e);
+      }
+    }
+
+    public String getResult() {
+      return returnString;
+    }
   }
 }
