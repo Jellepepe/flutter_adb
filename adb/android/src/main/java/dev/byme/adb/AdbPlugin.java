@@ -1,4 +1,4 @@
-package com.developedforme.adb;
+package dev.byme.adb;
 
 import androidx.annotation.NonNull;
 
@@ -7,23 +7,27 @@ import android.content.Context;
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
+import io.flutter.plugin.common.EventChannel;
+import io.flutter.plugin.common.EventChannel.StreamHandler;
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
 import io.flutter.plugin.common.MethodChannel.Result;
 import io.flutter.plugin.common.PluginRegistry.Registrar;
 import io.flutter.util.PathUtils;
 
 /** AdbPlugin */
-public class AdbPlugin implements FlutterPlugin, MethodCallHandler {
+public class AdbPlugin implements FlutterPlugin, MethodCallHandler, StreamHandler {
   /// The MethodChannel that will the communication between Flutter and native Android
   ///
   /// This local reference serves to register the plugin with the Flutter Engine and unregister it
   /// when the Flutter Engine is detached from the Activity
   private MethodChannel channel;
+  private EventChannel outputStream;
   private Context context;
 
   @Override
   public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
-    channel = new MethodChannel(flutterPluginBinding.getFlutterEngine().getDartExecutor(), "adb");
+    channel = new MethodChannel(flutterPluginBinding.getFlutterEngine().getDartExecutor(), "dev.byme.adb");
+    outputStream = new EventChannel(flutterPluginBinding.getFlutterEngine().getDartExecutor(), "dev.byme.adb/shellStream");
     context = flutterPluginBinding.getApplicationContext();
     channel.setMethodCallHandler(this);
   }
@@ -38,8 +42,12 @@ public class AdbPlugin implements FlutterPlugin, MethodCallHandler {
   // depending on the user's project. onAttachedToEngine or registerWith must both be defined
   // in the same class.
   public static void registerWith(Registrar registrar) {
-    final MethodChannel channel = new MethodChannel(registrar.messenger(), "adb");
-    channel.setMethodCallHandler(new AdbPlugin());
+    AdbPlugin plugin = new AdbPlugin();
+    final MethodChannel channel = new MethodChannel(registrar.messenger(), "dev.byme.adb");
+    channel.setMethodCallHandler(plugin);
+
+    final EventChannel outputChannel = new EventChannel(registrar.messenger(), "dev.byme.adb/shellStream");
+    outputChannel.setStreamHandler(plugin);
   }
 
   @Override
@@ -59,6 +67,16 @@ public class AdbPlugin implements FlutterPlugin, MethodCallHandler {
   public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
     channel.setMethodCallHandler(null);
   }
+
+  @Override
+    public void onListen(Object listener, EventChannel.EventSink eventSink) {
+        //TODO implement stream
+    }
+    
+    @Override
+    public void onCancel(Object listener) {
+        //TODO: implement stream
+    }
 
   public String attemptAdb(String command) {
     System.out.println("trying adb command: " + command);
@@ -85,7 +103,7 @@ public class AdbPlugin implements FlutterPlugin, MethodCallHandler {
     @Override
     public void run() {
       try {
-        AdbManager selfAdb = AdbManager.initInstance(context.getFilesDir(), "localhost");
+        AdbManager selfAdb = AdbManager.initInstance(context.getFilesDir(), "localhost", 5555);
         //selfAdb.executeCmd("pm grant " + BuildConfig.APPLICATION_ID + " android.permission.READ_LOGS");
         selfAdb.executeCmd(this.command);
         selfAdb.disconnect();

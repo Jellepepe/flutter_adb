@@ -1,4 +1,4 @@
-package com.developedforme.adb_example;
+package dev.byme.adb_example;
 
 import io.flutter.embedding.android.FlutterActivity;
 

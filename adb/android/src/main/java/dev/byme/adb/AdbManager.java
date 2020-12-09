@@ -1,4 +1,4 @@
-package com.developedforme.adb;
+package dev.byme.adb;
 
 import com.cgutman.adblib.AdbBase64;
 import com.cgutman.adblib.AdbConnection;
@@ -24,11 +24,11 @@ public class AdbManager {
     private AdbStream shellStream;
     private boolean isConnected = false;
 
-    public static AdbManager initInstance(File fileDir, String hostname) throws InterruptedException, NoSuchAlgorithmException, IOException {
+    public static AdbManager initInstance(File fileDir, String hostname, int port) throws InterruptedException, NoSuchAlgorithmException, IOException {
         if (instance!=null){
             instance.disconnect();
         }
-        instance = new AdbManager(fileDir, hostname);
+        instance = new AdbManager(fileDir, hostname, port);
         return instance;
     }
 
@@ -36,14 +36,14 @@ public class AdbManager {
         return instance;
     }
 
-    private AdbManager(File fileDir, String hostname) throws IOException, NoSuchAlgorithmException, InterruptedException {
+    private AdbManager(File fileDir, String hostname, int port) throws IOException, NoSuchAlgorithmException, InterruptedException {
         adbCrypto = setupCrypto(fileDir, "public.key", "private.key");
         socket = new Socket();
-        connect(hostname);
+        connect(hostname, port);
     }
 
-    private void connect(String address) throws IOException, InterruptedException {
-        socket.connect(new InetSocketAddress(address, 5555), 5000);
+    private void connect(String address, int port) throws IOException, InterruptedException {
+        socket.connect(new InetSocketAddress(address, port), 5000);
         adbConnection = AdbConnection.create(socket, adbCrypto);
         adbConnection.connect();
         shellStream = adbConnection.open("shell:");

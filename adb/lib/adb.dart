@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 
 class Adb {
   static const MethodChannel _channel =
-      const MethodChannel('adb');
+      const MethodChannel('dev.byme.adb');
 
   static Future<String> get platformVersion async {
     final String version = await _channel.invokeMethod('getPlatformVersion');

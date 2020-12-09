@@ -1,4 +1,4 @@
-group 'com.developedforme.adb'
+group 'dev.byme.adb'
 version '1.0'
 
 buildscript {
