@@ -18,6 +18,7 @@ class _MyAppState extends State<MyApp> {
   Color _color = Colors.white;
   Stopwatch _sw = new Stopwatch();
   int _delay = 0;
+  String _output = "";
 
   @override
   void initState() {
@@ -65,6 +66,7 @@ class _MyAppState extends State<MyApp> {
                   Future.delayed(Duration(seconds: 2)).then(
                     (_) => setState(() {
                     _color = Colors.white;
+                    _output = "";
                     }));
                 });
               },
@@ -80,12 +82,26 @@ class _MyAppState extends State<MyApp> {
                   onPressed: () {
                     _delay = 0;
                     _sw.start();
-                    sendAdbCommand("input tap 300 300");
+                    sendAdbCommand("echo Waddup");
                   }
                 ),
                 Center(
                   child: Text('Measured adb delay: ' + ((_delay == 0) ? "Unknown" : _delay.toString() + 'ms') + '\n'),
                 ),
+                StreamBuilder(
+                      stream: Adb.outputStream,
+                      builder: (BuildContext context, AsyncSnapshot snapshot) {
+                        if(snapshot.hasData) {
+                          _output = _output + snapshot.data.toString();
+                          return Text(
+                            _output,
+                          );
+                        }
+                        return Text(
+                          _output,
+                        );
+                      }
+                    )
               ]
             ),
           ]

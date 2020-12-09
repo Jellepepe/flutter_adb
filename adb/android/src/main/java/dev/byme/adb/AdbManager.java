@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.security.NoSuchAlgorithmException;
+import java.util.function.Consumer;
 
 
 
@@ -23,12 +24,27 @@ public class AdbManager {
     private AdbConnection adbConnection;
     private AdbStream shellStream;
     private boolean isConnected = false;
+    private Consumer<String> readCallBack;
 
-    public static AdbManager initInstance(File fileDir, String hostname, int port) throws InterruptedException, NoSuchAlgorithmException, IOException {
+    private Thread readThread = new Thread(new Runnable() {
+        @Override
+        public void run() {
+            while(shellStream != null && !shellStream.isClosed())
+                    try {
+                        String shellOutputString = new String(shellStream.read(), "US-ASCII");
+                        System.out.print("Out: " + shellOutputString);
+                        readCallBack.accept(shellOutputString);
+                    } catch (Exception e) {
+                        System.out.println("Error: "+ e.toString());
+                    }
+        }
+    });
+
+    public static AdbManager initInstance(File fileDir, String hostname, int port, Consumer<String> readCallback) throws InterruptedException, NoSuchAlgorithmException, IOException {
         if (instance!=null){
             instance.disconnect();
         }
-        instance = new AdbManager(fileDir, hostname, port);
+        instance = new AdbManager(fileDir, hostname, port, readCallback);
         return instance;
     }
 
@@ -36,17 +52,20 @@ public class AdbManager {
         return instance;
     }
 
-    private AdbManager(File fileDir, String hostname, int port) throws IOException, NoSuchAlgorithmException, InterruptedException {
+    private AdbManager(File fileDir, String hostname, int port, Consumer<String> readCallback) throws IOException, NoSuchAlgorithmException, InterruptedException {
+        this.readCallBack = readCallback;
         adbCrypto = setupCrypto(fileDir, "public.key", "private.key");
         socket = new Socket();
         connect(hostname, port);
     }
 
     private void connect(String address, int port) throws IOException, InterruptedException {
+        isConnected = true;
         socket.connect(new InetSocketAddress(address, port), 5000);
         adbConnection = AdbConnection.create(socket, adbCrypto);
         adbConnection.connect();
         shellStream = adbConnection.open("shell:");
+        readThread.start();
     }
 
     public void disconnect() throws IOException {
