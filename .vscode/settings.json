@@ -5,5 +5,11 @@
         "**/.settings": true,
         "**/.factorypath": true
     },
-    "java.configuration.updateBuildConfiguration": "disabled"
+    "java.configuration.updateBuildConfiguration": "disabled",
+    "cSpell.words": [
+        "CLSE",
+        "CNXN",
+        "MAXDATA",
+        "WRTE"
+    ]
 }
