@@ -10,4 +10,9 @@ class AdbMessage {
   final Uint8List? payload;
 
   AdbMessage(this.command, this.arg0, this.arg1, this.payloadLength, this.checksum, this.magic, [this.payload]);
+
+  @override
+  String toString() {
+    return 'AdbMessage{command: $command, arg0: $arg0, arg1: $arg1, payloadLength: $payloadLength, checksum: $checksum, magic: $magic, payload: $payload}';
+  }
 }

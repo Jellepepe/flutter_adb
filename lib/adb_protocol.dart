@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_adb/adb_message.dart';
 
 class AdbProtocol {
@@ -91,21 +91,26 @@ class AdbProtocol {
       byteData.setUint32(16, 0, Endian.little);
     }
 
-    byteData.setUint32(20, ~command, Endian.little);
+    byteData.setUint32(20, (~command).toUnsigned(command.bitLength + 1), Endian.little);
 
     if (payload != null) {
       message.setAll(ADB_HEADER_LENGTH, payload);
     }
 
+    debugPrint('Generated message: $message');
+
     return message;
   }
 
   static bool validateAdbMessage(AdbMessage message) {
-    if (message.magic != ~message.command) {
+    if (message.magic != (~message.command).toUnsigned(message.command.bitLength + 1)) {
+      debugPrint('Magic invalid: $message');
       return false;
     }
     if (message.payload != null) {
-      return generatePayloadChecksum(message.payload!) == message.checksum;
+      bool valid = generatePayloadChecksum(message.payload!) == message.checksum;
+      if (!valid) debugPrint('Checksum invalid: $message');
+      return valid;
     }
     return true;
   }

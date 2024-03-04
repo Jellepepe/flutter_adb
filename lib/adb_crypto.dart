@@ -41,6 +41,11 @@ class AdbCrypto {
     _keyPair = generateAdbKeyPair();
   }
 
+  @override
+  String toString() {
+    return 'AdbCrypto: Modulus: ${_keyPair.publicKey.modulus}, Public Exponent: ${_keyPair.publicKey.publicExponent}';
+  }
+
   static Uint8List convertRsaPublicKeyToAdbFormat(RSAPublicKey publicKey) {
     assert(publicKey.modulus != null && publicKey.publicExponent != null, 'invalid public key');
     BigInt r32 = BigInt.zero.setBit(32);

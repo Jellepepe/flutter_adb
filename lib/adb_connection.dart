@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_adb/adb_crypto.dart';
@@ -73,12 +72,14 @@ class AdbConnection {
       // Listen to adb messages
       _adbStreamController.stream.where((message) => AdbProtocol.validateAdbMessage(message)).listen(_handleAdbMessage);
 
+      _socketConnectedController.stream.listen((connected) => connected ? {} : _adbConnectedController.add(false));
       // Send connection init
       await _connectAdb();
 
       // wait for adbConnected
       return await _adbConnectedController.stream.first;
     } catch (e) {
+      debugPrint('Failed to connect to ADB: $e');
       return false;
     }
   }
@@ -89,6 +90,7 @@ class AdbConnection {
     }
     _socket!.add(AdbProtocol.generateConnect());
     await _socket!.flush();
+    debugPrint('Sent connect message');
   }
 
   void sendMessage(Uint8List messageData, {bool flush = false}) {
@@ -104,6 +106,7 @@ class AdbConnection {
   final List<int> _inputBuffer = [];
 
   void _handleAdbInput(Uint8List data) {
+    debugPrint('Received adb data: $data');
     List<int> internalBuffer = [];
     if (_inputBuffer.isNotEmpty) {
       internalBuffer.addAll(_inputBuffer);
@@ -130,12 +133,14 @@ class AdbConnection {
         _adbStreamController
             .add(AdbMessage(command, arg0, arg1, payloadLength, checksum, magic, Uint8List.fromList(payload)));
       } else {
+        internalBuffer = internalBuffer.sublist(AdbProtocol.ADB_HEADER_LENGTH);
         _adbStreamController.add(AdbMessage(command, arg0, arg1, payloadLength, checksum, magic));
       }
     }
   }
 
   void _handleAdbMessage(AdbMessage message) {
+    debugPrint('Received adb message: $message');
     switch (message.command) {
       case AdbProtocol.CMD_OKAY:
         // Drop these messages when not in connected state
@@ -198,11 +203,11 @@ class AdbConnection {
     if (!_adbConnected) {
       throw Exception('Not connected to ADB');
     }
-    int localId = openStreams.length;
+    int localId = openStreams.length + 1;
     AdbStream stream = AdbStream(localId, this);
     openStreams[localId] = stream;
     sendMessage(AdbProtocol.generateOpen(localId, destination), flush: true);
-    if (await stream.onWriteReady.first.timeout(const Duration(seconds: 1), onTimeout: () => false)) {
+    if (await stream.onWriteReady.first.timeout(const Duration(seconds: 10), onTimeout: () => false)) {
       return stream;
     } else {
       throw Exception('Stream open failed or refused by remote peer');
