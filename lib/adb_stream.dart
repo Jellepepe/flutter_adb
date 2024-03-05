@@ -39,7 +39,7 @@ class AdbStream {
   }
 
   Future<bool> writeString(String payload) {
-    return write(Uint8List.fromList(utf8.encode('$payload\x00')), true);
+    return write(utf8.encode(payload), true);
   }
 
   Future<bool> write(Uint8List payload, bool flush) async {
