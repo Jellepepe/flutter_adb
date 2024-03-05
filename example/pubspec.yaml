@@ -30,6 +30,8 @@ environment:
 dependencies:
   flutter_adb: 
     path: ../
+  flutter_riverpod: ^2.4.10
+  google_fonts: 6.1.0
   flutter:
     sdk: flutter
 
