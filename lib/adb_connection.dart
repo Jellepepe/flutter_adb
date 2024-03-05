@@ -197,6 +197,12 @@ class AdbConnection {
     }
   }
 
+  /// Opens a new shell stream to the remote peer,
+  /// ensuring that the connection is established and the stream is open.
+  Future<AdbStream> openShell() async {
+    return open('shell:');
+  }
+
   /// Opens a new stream to the remote peer,
   /// ensuring that the connection is established and the stream is open.
   Future<AdbStream> open(String destination) async {
