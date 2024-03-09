@@ -35,11 +35,9 @@ class AdbCrypto {
 
   static const int KEY_LENGTH_WORDS = KEY_LENGTH_BYTES ~/ 4;
 
-  late AsymmetricKeyPair<RSAPublicKey, RSAPrivateKey> _keyPair;
+  late final AsymmetricKeyPair<RSAPublicKey, RSAPrivateKey> _keyPair;
 
-  AdbCrypto() {
-    _keyPair = generateAdbKeyPair();
-  }
+  AdbCrypto({AsymmetricKeyPair<RSAPublicKey, RSAPrivateKey>? keyPair}) : _keyPair = keyPair ?? generateAdbKeyPair();
 
   @override
   String toString() {
@@ -89,7 +87,7 @@ class AdbCrypto {
     return signer.generateSignature(paddedPayload).bytes;
   }
 
-  AsymmetricKeyPair<RSAPublicKey, RSAPrivateKey> generateAdbKeyPair() {
+  static AsymmetricKeyPair<RSAPublicKey, RSAPrivateKey> generateAdbKeyPair() {
     final secureRandom = SecureRandom('Fortuna')
       ..seed(KeyParameter(Platform.instance.platformEntropySource().getBytes(32)));
     final keyGen = RSAKeyGenerator();
