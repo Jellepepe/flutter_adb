@@ -12,6 +12,7 @@ class AdbConnection {
   final int port;
   final AdbCrypto crypto;
   final Map<int, AdbStream> openStreams = {};
+  final bool verbose;
 
   bool _socketConnected = false;
   bool _adbConnected = false;
@@ -30,7 +31,7 @@ class AdbConnection {
 
   Stream<bool> get onConnectionChanged => _adbConnectedController.stream;
 
-  AdbConnection(this.ip, this.port, this.crypto);
+  AdbConnection(this.ip, this.port, this.crypto, {this.verbose = false});
 
   bool get connected => _socketConnected;
 
@@ -90,7 +91,7 @@ class AdbConnection {
     }
     _socket!.add(AdbProtocol.generateConnect());
     await _socket!.flush();
-    debugPrint('Sent connect message');
+    if (verbose) debugPrint('Sent connect message');
   }
 
   Future<void> sendMessage(Uint8List messageData, {bool flush = false}) async {
@@ -106,7 +107,7 @@ class AdbConnection {
   final List<int> _inputBuffer = [];
 
   void _handleAdbInput(Uint8List data) {
-    debugPrint('Received adb data: $data');
+    if (verbose) debugPrint('Received adb data: $data');
     List<int> internalBuffer = [];
     if (_inputBuffer.isNotEmpty) {
       internalBuffer.addAll(_inputBuffer);
@@ -140,7 +141,7 @@ class AdbConnection {
   }
 
   void _handleAdbMessage(AdbMessage message) {
-    debugPrint('Received adb message: $message');
+    if (verbose) debugPrint('Received adb message: $message');
     switch (message.command) {
       case AdbProtocol.CMD_OKAY:
         // Drop these messages when not in connected state

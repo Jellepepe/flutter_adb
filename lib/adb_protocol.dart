@@ -97,8 +97,6 @@ class AdbProtocol {
       message.setAll(ADB_HEADER_LENGTH, payload);
     }
 
-    debugPrint('Generated message: $message');
-
     return message;
   }
 

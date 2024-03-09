@@ -8,7 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 final StateProvider<AdbConnection> adbConnectionProvider = StateProvider((ref) {
   final crypto = AdbCrypto();
-  final connection = AdbConnection('127.0.0.1', 5555, crypto);
+  final connection = AdbConnection('127.0.0.1', 5555, crypto, verbose: true);
   return connection;
 });
 
@@ -62,7 +62,6 @@ class _MyHomePageState extends ConsumerState<MyHomePage> {
             stream: ref.read(adbConnectionProvider).onConnectionChanged,
             initialData: false,
             builder: (context, snapshot) {
-              debugPrint('Connection changed: ${snapshot.data}');
               if (snapshot.hasData) {
                 if (snapshot.data ?? false) {
                   return Text(
