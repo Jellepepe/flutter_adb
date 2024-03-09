@@ -67,7 +67,7 @@ class _AdbTerminalState extends ConsumerState<AdbTerminal> {
         Expanded(
           child: SingleChildScrollView(
             reverse: true,
-            child: Text(
+            child: SelectableText(
               ref.watch(shellOutput).join('\n'),
               style: GoogleFonts.robotoMono(
                 color: isClosed ? Colors.grey : Colors.black,
