@@ -93,13 +93,13 @@ class AdbConnection {
     debugPrint('Sent connect message');
   }
 
-  void sendMessage(Uint8List messageData, {bool flush = false}) {
+  Future<void> sendMessage(Uint8List messageData, {bool flush = false}) async {
     if (!_adbConnected) {
       throw Exception('Not connected to ADB');
     }
     _socket!.add(messageData);
     if (flush) {
-      _socket!.flush();
+      await _socket!.flush();
     }
   }
 

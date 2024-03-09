@@ -55,7 +55,7 @@ class AdbStream {
     _writeReady = false;
     _writeReadyController.add(_writeReady);
 
-    _adbConnection.sendMessage(AdbProtocol.generateWrite(localId, remoteId!, payload), flush: flush);
+    await _adbConnection.sendMessage(AdbProtocol.generateWrite(localId, remoteId!, payload), flush: flush);
     return true;
   }
 
