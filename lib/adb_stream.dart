@@ -6,7 +6,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_adb/adb_connection.dart';
 import 'package:flutter_adb/adb_protocol.dart';
 

@@ -4,8 +4,8 @@
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_adb/adb_crypto.dart';
 import 'package:flutter_adb/adb_message.dart';
 import 'package:flutter_adb/adb_protocol.dart';
@@ -84,7 +84,7 @@ class AdbConnection {
       // wait for adbConnected
       return await _adbConnectedController.stream.first;
     } catch (e) {
-      debugPrint('Failed to connect to ADB: $e');
+      print('Failed to connect to ADB: $e');
       return false;
     }
   }
@@ -95,7 +95,7 @@ class AdbConnection {
     }
     _socket!.add(AdbProtocol.generateConnect());
     await _socket!.flush();
-    if (verbose) debugPrint('Sent connect message');
+    if (verbose) print('Sent connect message');
   }
 
   Future<void> sendMessage(Uint8List messageData, {bool flush = false}) async {
@@ -111,7 +111,7 @@ class AdbConnection {
   final List<int> _inputBuffer = [];
 
   void _handleAdbInput(Uint8List data) {
-    if (verbose) debugPrint('Received adb data: $data');
+    if (verbose) print('Received adb data: $data');
     List<int> internalBuffer = [];
     if (_inputBuffer.isNotEmpty) {
       internalBuffer.addAll(_inputBuffer);
@@ -145,7 +145,7 @@ class AdbConnection {
   }
 
   void _handleAdbMessage(AdbMessage message) {
-    if (verbose) debugPrint('Received adb message: $message');
+    if (verbose) print('Received adb message: $message');
     switch (message.command) {
       case AdbProtocol.CMD_OKAY:
         // Drop these messages when not in connected state

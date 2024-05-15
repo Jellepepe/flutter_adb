@@ -6,7 +6,6 @@ library flutter_adb;
 
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_adb/adb_connection.dart';
 import 'package:flutter_adb/adb_crypto.dart';
 import 'package:flutter_adb/adb_stream.dart';
@@ -22,7 +21,7 @@ class Adb {
   }) async {
     AdbConnection connection = AdbConnection(ip, port, crypto ?? AdbCrypto());
     if (!await connection.connect()) {
-      debugPrint('Failed to connect to $ip:$port');
+      print('Failed to connect to $ip:$port');
       return '';
     }
     String finalCommand = '$command;exit\n';
@@ -31,7 +30,7 @@ class Adb {
     String output = await stream.onPayload.fold('', (previous, element) => previous + utf8.decode(element)).timeout(
       const Duration(minutes: 1),
       onTimeout: () {
-        debugPrint('Timeout closing the stream.');
+        print('Timeout closing the stream.');
         stream.close();
         return '';
       },
