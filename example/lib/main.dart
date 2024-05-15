@@ -1,3 +1,7 @@
+// Copyright 2024 Pepe Tiebosch (byme.dev). All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 import 'package:example/adb_terminal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_adb/adb_connection.dart';
