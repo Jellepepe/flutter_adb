@@ -217,7 +217,7 @@ class AdbConnection {
     int localId = openStreams.length + 1;
     AdbStream stream = AdbStream(localId, this);
     openStreams[localId] = stream;
-    sendMessage(AdbProtocol.generateOpen(localId, destination), flush: true);
+    await sendMessage(AdbProtocol.generateOpen(localId, destination), flush: true);
     if (await stream.onWriteReady.first.timeout(const Duration(seconds: 10), onTimeout: () => false)) {
       return stream;
     } else {
