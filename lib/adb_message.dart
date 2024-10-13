@@ -17,6 +17,6 @@ class AdbMessage {
 
   @override
   String toString() {
-    return 'AdbMessage{command: $command, arg0: $arg0, arg1: $arg1, payloadLength: $payloadLength, checksum: $checksum, magic: $magic, payload: $payload}';
+    return 'AdbMessage{command: 0x${command.toRadixString(16)}, arg0: $arg0, arg1: $arg1, payloadLength: $payloadLength, checksum: $checksum, magic: $magic, payload: $payload}';
   }
 }

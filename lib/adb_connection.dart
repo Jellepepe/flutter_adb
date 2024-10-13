@@ -75,7 +75,7 @@ class AdbConnection {
       _socketConnectedController.add(_socketConnected);
 
       // Listen to adb messages
-      _adbStreamController.stream.where((message) => AdbProtocol.validateAdbMessage(message)).listen(_handleAdbMessage);
+      _handleAdbMessages(_adbStreamController.stream.where((message) => AdbProtocol.validateAdbMessage(message)));
 
       _socketConnectedController.stream.listen((connected) => connected ? {} : _adbConnectedController.add(false));
       // Send connection init
@@ -102,9 +102,11 @@ class AdbConnection {
     if (!_adbConnected) {
       throw Exception('Not connected to ADB');
     }
+    if (verbose) print('Sending adb message: $messageData');
     _socket!.add(messageData);
     if (flush) {
       await _socket!.flush();
+      if (verbose) print('Flushed adb message: $messageData');
     }
   }
 
@@ -144,7 +146,14 @@ class AdbConnection {
     }
   }
 
-  void _handleAdbMessage(AdbMessage message) {
+  /// Wrapper to allow async processing of adb messages in sequence
+  void _handleAdbMessages(Stream<AdbMessage> messages) async {
+    await for (var message in messages) {
+      await _handleAdbMessage(message);
+    }
+  }
+
+  Future<void> _handleAdbMessage(AdbMessage message) async {
     if (verbose) print('Received adb message: $message');
     switch (message.command) {
       case AdbProtocol.CMD_OKAY:
@@ -165,7 +174,7 @@ class AdbConnection {
         // Add payload to the stream
         openStreams[message.arg1]!.addPayload(message.payload!);
         // Notify that we are ready for write
-        openStreams[message.arg1]!.sendReady();
+        await openStreams[message.arg1]!.sendReady();
         break;
       case AdbProtocol.CMD_CLSE:
         // Drop these messages when not in connected state
@@ -217,7 +226,7 @@ class AdbConnection {
     int localId = openStreams.length + 1;
     AdbStream stream = AdbStream(localId, this);
     openStreams[localId] = stream;
-    await sendMessage(AdbProtocol.generateOpen(localId, destination), flush: true);
+    await sendMessage(AdbProtocol.generateOpen(localId, destination));
     if (await stream.onWriteReady.first.timeout(const Duration(seconds: 10), onTimeout: () => false)) {
       return stream;
     } else {

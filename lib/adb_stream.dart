@@ -34,11 +34,11 @@ class AdbStream {
     _writeReadyController.add(_writeReady);
   }
 
-  void sendReady() {
+  Future<void> sendReady() async {
     if (remoteId == null) {
       throw Exception('Remote ID is not set');
     }
-    _adbConnection.sendMessage(AdbProtocol.generateReady(localId, remoteId!));
+    await _adbConnection.sendMessage(AdbProtocol.generateReady(localId, remoteId!));
   }
 
   Future<bool> writeString(String payload) {
