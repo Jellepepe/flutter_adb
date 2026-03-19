@@ -69,11 +69,11 @@ class AdbStream {
     _readStream.close();
   }
 
-  void sendClose() {
+  Future<void> sendClose() async {
     if (isClosed) {
       return;
     }
-    _adbConnection.sendMessage(AdbProtocol.generateClose(localId, remoteId!), flush: true);
+    await _adbConnection.sendMessage(AdbProtocol.generateClose(localId, remoteId!), flush: true);
     close();
   }
 }

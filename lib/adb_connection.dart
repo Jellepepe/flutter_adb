@@ -22,8 +22,12 @@ class AdbConnection {
   bool _adbConnected = false;
 
   bool _sentSignature = false;
-
   Socket? _socket;
+
+  Future? _sendLock;
+
+  StreamSubscription<AdbMessage>? _adbMessageSubscription;
+  StreamSubscription<bool>? _socketConnectedSubscription;
 
   /// Specifies the maximum amount data that can be sent to the remote peer.
   /// Only valid after a connection has been established.
@@ -44,9 +48,28 @@ class AdbConnection {
       return true;
     }
     _socketConnected = false;
+    _adbConnected = false;
+    _sentSignature = false;
     _socketConnectedController.add(_socketConnected);
-    await _socket!.flush();
-    _socket!.destroy();
+
+    await _adbMessageSubscription?.cancel();
+    await _socketConnectedSubscription?.cancel();
+    _adbMessageSubscription = null;
+    _socketConnectedSubscription = null;
+
+    for (var stream in openStreams.values) {
+      stream.close();
+    }
+    openStreams.clear();
+
+    _sendLock = null;
+
+    try {
+      await _socket!.flush();
+      _socket!.destroy();
+    } catch (_) {}
+    _socket = null;
+
     return true;
   }
 
@@ -75,9 +98,17 @@ class AdbConnection {
       _socketConnectedController.add(_socketConnected);
 
       // Listen to adb messages
-      _handleAdbMessages(_adbStreamController.stream.where((message) => AdbProtocol.validateAdbMessage(message)));
+      await _adbMessageSubscription?.cancel();
+      _adbMessageSubscription = _adbStreamController.stream
+          .where((message) => AdbProtocol.validateAdbMessage(message))
+          .listen((message) async {
+        await _handleAdbMessage(message);
+      });
 
-      _socketConnectedController.stream.listen((connected) => connected ? {} : _adbConnectedController.add(false));
+      await _socketConnectedSubscription?.cancel();
+      _socketConnectedSubscription =
+          _socketConnectedController.stream.listen((connected) => connected ? {} : _adbConnectedController.add(false));
+
       // Send connection init
       await _connectAdb();
 
@@ -102,11 +133,29 @@ class AdbConnection {
     if (!_adbConnected) {
       throw Exception('Not connected to ADB');
     }
-    if (verbose) print('Sending adb message: $messageData');
-    _socket!.add(messageData);
-    if (flush) {
-      await _socket!.flush();
-      if (verbose) print('Flushed adb message: $messageData');
+    await _sendRaw(messageData, flush: flush);
+  }
+
+  Future<void> _sendRaw(Uint8List data, {bool flush = false}) async {
+    final socket = _socket;
+    if (socket == null) return;
+
+    final completer = Completer();
+    final prevLock = _sendLock;
+    _sendLock = completer.future;
+    if (prevLock != null) await prevLock;
+
+    if (verbose) print('Sending adb data: $data');
+    try {
+      socket.add(data);
+      if (flush) {
+        await socket.flush();
+        if (verbose) print('Flushed adb data: $data');
+      }
+    } catch (e) {
+      if (verbose) print('Error sending adb data: $e');
+    } finally {
+      completer.complete();
     }
   }
 
@@ -143,13 +192,6 @@ class AdbConnection {
         internalBuffer = internalBuffer.sublist(AdbProtocol.ADB_HEADER_LENGTH);
         _adbStreamController.add(AdbMessage(command, arg0, arg1, payloadLength, checksum, magic));
       }
-    }
-  }
-
-  /// Wrapper to allow async processing of adb messages in sequence
-  void _handleAdbMessages(Stream<AdbMessage> messages) async {
-    await for (var message in messages) {
-      await _handleAdbMessage(message);
     }
   }
 
@@ -190,9 +232,9 @@ class AdbConnection {
         if (message.arg0 != AdbProtocol.AUTH_TYPE_TOKEN) return;
         // Send the token to the remote peer
         if (_sentSignature) {
-          _socket!.add(AdbProtocol.generateAuth(AdbProtocol.AUTH_TYPE_RSA_PUBLIC, crypto.getAdbPublicKeyPayload()));
+          await _sendRaw(AdbProtocol.generateAuth(AdbProtocol.AUTH_TYPE_RSA_PUBLIC, crypto.getAdbPublicKeyPayload()));
         } else if (message.payload != null) {
-          _socket!.add(
+          await _sendRaw(
             AdbProtocol.generateAuth(AdbProtocol.AUTH_TYPE_SIGNATURE, crypto.signAdbTokenPayload(message.payload!)),
           );
           _sentSignature = true;

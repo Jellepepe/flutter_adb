@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-library flutter_adb;
+library;
 
 import 'dart:convert';
 
@@ -26,7 +26,7 @@ class Adb {
     }
     String finalCommand = '$command;exit\n';
     AdbStream stream = await connection.openShell();
-    stream.writeString(finalCommand);
+    await stream.writeString(finalCommand);
     String output = await stream.onPayload.fold('', (previous, element) => previous + utf8.decode(element)).timeout(
       const Duration(minutes: 1),
       onTimeout: () {
