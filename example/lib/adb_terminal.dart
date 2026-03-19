@@ -12,14 +12,23 @@ import 'package:flutter_adb/adb_stream.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-final StateProvider<String> shellBufferProvider = StateProvider((ref) => '');
+class ShellBufferNotifier extends Notifier<String> {
+  @override
+  String build() => '';
 
-final Provider<List<String>> shellOutput = Provider((ref) {
+  void append(String value) {
+    state += value;
+  }
+}
+
+final shellBufferProvider = NotifierProvider<ShellBufferNotifier, String>(ShellBufferNotifier.new);
+
+final shellOutput = Provider<List<String>>((ref) {
   List<String> shellLines = ref.watch(shellBufferProvider).split('\n');
   return shellLines.sublist(max(0, shellLines.length - 101), shellLines.length - 1);
 });
 
-final Provider<String> shellCurLine = Provider((ref) {
+final shellCurLine = Provider<String>((ref) {
   List<String> shellLines = ref.watch(shellBufferProvider).split('\n');
   return shellLines[shellLines.length - 1];
 });
@@ -44,7 +53,7 @@ class _AdbTerminalState extends ConsumerState<AdbTerminal> {
   void initState() {
     super.initState();
     _shellSubscription = widget.stream.onPayload.listen(
-        (value) => ref.read(shellBufferProvider.notifier).state += utf8.decode(value),
+        (value) => ref.read(shellBufferProvider.notifier).append(utf8.decode(value)),
         onDone: () => setState(() => isClosed = true));
   }
 

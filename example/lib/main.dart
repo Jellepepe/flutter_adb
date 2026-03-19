@@ -1,6 +1,8 @@
-// Copyright 2024 Pepe Tiebosch (byme.dev). All rights reserved.
+// Copyright 2026 Pepe Tiebosch (byme.dev). All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+import 'dart:async';
 
 import 'package:example/adb_terminal.dart';
 import 'package:flutter/material.dart';
@@ -10,17 +12,32 @@ import 'package:flutter_adb/adb_stream.dart';
 import 'package:flutter_adb/flutter_adb.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-final StateProvider<AdbConnection> adbConnectionProvider = StateProvider((ref) {
-  final crypto = AdbCrypto();
-  final connection = AdbConnection('127.0.0.1', 5555, crypto, verbose: true);
-  return connection;
-});
+class AdbConnectionNotifier extends Notifier<AdbConnection?> {
+  @override
+  AdbConnection? build() {
+    return null;
+  }
 
-final FutureProvider<AdbStream> adbStreamProvider = FutureProvider((ref) async {
-  final connection = ref.watch(adbConnectionProvider);
-  await connection.connect();
-  return await connection.openShell();
-});
+  void setConnection(String ip, int port) {
+    state?.disconnect();
+    state = AdbConnection(ip, port, AdbCrypto(), verbose: true);
+  }
+}
+
+final adbConnectionProvider = NotifierProvider<AdbConnectionNotifier, AdbConnection?>(AdbConnectionNotifier.new);
+
+class AdbStreamNotifier extends AsyncNotifier<AdbStream?> {
+  @override
+  FutureOr<AdbStream?> build() async {
+    final connection = ref.watch(adbConnectionProvider);
+    if (connection == null) return null;
+
+    await connection.connect();
+    return await connection.openShell();
+  }
+}
+
+final adbStreamProvider = AsyncNotifierProvider<AdbStreamNotifier, AdbStream?>(AdbStreamNotifier.new);
 
 void main() {
   final ProviderContainer container = ProviderContainer();
@@ -54,27 +71,31 @@ class MyHomePage extends ConsumerStatefulWidget {
 class _MyHomePageState extends ConsumerState<MyHomePage> {
   final _formKey = GlobalKey<FormState>();
 
-  final TextEditingController _ipController = TextEditingController();
-  final TextEditingController _portController = TextEditingController();
+  final TextEditingController _ipController = TextEditingController(text: '127.0.0.1');
+  final TextEditingController _portController = TextEditingController(text: '5555');
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
         appBar: AppBar(
           backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-          title: StreamBuilder(
-            stream: ref.read(adbConnectionProvider).onConnectionChanged,
+          title: StreamBuilder<bool>(
+            stream: ref.watch(adbConnectionProvider)?.onConnectionChanged,
             initialData: false,
             builder: (context, snapshot) {
+              final connection = ref.watch(adbConnectionProvider);
+              if (connection == null) {
+                return const Text('ADB Flutter Example, Not connected', style: TextStyle(fontSize: 32));
+              }
               if (snapshot.hasData) {
                 if (snapshot.data ?? false) {
                   return Text(
-                    'ADB Flutter Example, Connected to: ${ref.watch(adbConnectionProvider).ip}:${ref.watch(adbConnectionProvider).port}',
+                    'ADB Flutter Example, Connected to: ${connection.ip}:${connection.port}',
                     style: const TextStyle(fontSize: 32),
                   );
                 } else {
                   return const Text(
-                    'ADB Flutter Example, Not connected',
+                    'ADB Flutter Example, Connecting...',
                     style: TextStyle(fontSize: 32),
                   );
                 }
@@ -99,9 +120,9 @@ class _MyHomePageState extends ConsumerState<MyHomePage> {
                     IntrinsicWidth(
                       child: TextFormField(
                         controller: _ipController,
-                        decoration: InputDecoration(
-                          border: const OutlineInputBorder(),
-                          hintText: ref.watch(adbConnectionProvider).ip,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          hintText: 'IP Address',
                         ),
                         //validates valid ipv4 address
                         validator: (value) {
@@ -119,9 +140,9 @@ class _MyHomePageState extends ConsumerState<MyHomePage> {
                     IntrinsicWidth(
                       child: TextFormField(
                         controller: _portController,
-                        decoration: InputDecoration(
-                          border: const OutlineInputBorder(),
-                          hintText: ref.watch(adbConnectionProvider).port.toString(),
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          hintText: 'Port',
                         ),
                         // Validates valid port
                         validator: (value) {
@@ -136,14 +157,12 @@ class _MyHomePageState extends ConsumerState<MyHomePage> {
                       ),
                     ),
                     TextButton(
-                      onPressed: () async {
+                      onPressed: () {
                         if (_formKey.currentState!.validate()) {
-                          await ref.read(adbConnectionProvider).disconnect();
-                          ref.read(adbConnectionProvider.notifier).state = AdbConnection(
-                            _ipController.text,
-                            int.parse(_portController.text),
-                            AdbCrypto(),
-                          );
+                          ref.read(adbConnectionProvider.notifier).setConnection(
+                                _ipController.text,
+                                int.parse(_portController.text),
+                              );
                         }
                       },
                       child: const Text('Connect'),
@@ -156,6 +175,9 @@ class _MyHomePageState extends ConsumerState<MyHomePage> {
                   constraints: const BoxConstraints(maxWidth: 700),
                   child: ref.watch(adbStreamProvider).maybeWhen(
                       data: (adbStream) {
+                        if (adbStream == null) {
+                          return const Center(child: Text('Press Connect to start ADB session'));
+                        }
                         return AdbTerminal(stream: adbStream);
                       },
                       loading: () => const CircularProgressIndicator(),
