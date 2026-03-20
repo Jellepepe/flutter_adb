@@ -1,4 +1,4 @@
-// Copyright 2024 Pepe Tiebosch (byme.dev). All rights reserved.
+// Copyright 2026 Pepe Tiebosch (byme.dev). All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter_adb/adb_certificate.dart';
 import 'package:flutter_adb/adb_crypto.dart';
 import 'package:flutter_adb/adb_message.dart';
 import 'package:flutter_adb/adb_protocol.dart';
@@ -22,12 +23,14 @@ class AdbConnection {
   bool _adbConnected = false;
 
   bool _sentSignature = false;
+  bool _tlsEnabled = false;
   Socket? _socket;
 
   Future? _sendLock;
 
   StreamSubscription<AdbMessage>? _adbMessageSubscription;
   StreamSubscription<bool>? _socketConnectedSubscription;
+  StreamSubscription<Uint8List>? _socketDataSubscription;
 
   /// Specifies the maximum amount data that can be sent to the remote peer.
   /// Only valid after a connection has been established.
@@ -43,6 +46,9 @@ class AdbConnection {
 
   bool get connected => _socketConnected;
 
+  /// Whether the connection is using TLS encryption (Android 11+).
+  bool get tlsEnabled => _tlsEnabled;
+
   Future<bool> disconnect() async {
     if (_socket == null) {
       return true;
@@ -50,12 +56,15 @@ class AdbConnection {
     _socketConnected = false;
     _adbConnected = false;
     _sentSignature = false;
+    _tlsEnabled = false;
     _socketConnectedController.add(_socketConnected);
 
     await _adbMessageSubscription?.cancel();
     await _socketConnectedSubscription?.cancel();
+    await _socketDataSubscription?.cancel();
     _adbMessageSubscription = null;
     _socketConnectedSubscription = null;
+    _socketDataSubscription = null;
 
     for (var stream in openStreams.values) {
       stream.close();
@@ -83,7 +92,7 @@ class AdbConnection {
         ..setOption(SocketOption.tcpNoDelay, true);
 
       // Add socket listener
-      _socket!.listen(
+      _socketDataSubscription = _socket!.listen(
         _handleAdbInput,
         onDone: () {
           _socketConnected = false;
@@ -190,7 +199,14 @@ class AdbConnection {
             .add(AdbMessage(command, arg0, arg1, payloadLength, checksum, magic, Uint8List.fromList(payload)));
       } else {
         internalBuffer = internalBuffer.sublist(AdbProtocol.ADB_HEADER_LENGTH);
-        _adbStreamController.add(AdbMessage(command, arg0, arg1, payloadLength, checksum, magic));
+        final message = AdbMessage(command, arg0, arg1, payloadLength, checksum, magic);
+        _adbStreamController.add(message);
+        if (command == AdbProtocol.CMD_STLS) {
+          if (internalBuffer.isNotEmpty) {
+            _inputBuffer.addAll(internalBuffer);
+          }
+          return;
+        }
       }
     }
   }
@@ -247,9 +263,77 @@ class AdbConnection {
         _adbConnected = true;
         _adbConnectedController.add(true);
         break;
+      case AdbProtocol.CMD_STLS:
+        // Device requires TLS upgrade (Android 11+)
+        if (verbose) print('Device requires TLS, upgrading connection...');
+        await _upgradeToTls();
+        break;
       default:
         // Unknown message, drop it
         break;
+    }
+  }
+
+  /// Upgrades the current TCP socket to a TLS-encrypted connection.
+  ///
+  /// This is called when the device sends a STLS message (Android 11+).
+  /// The flow is:
+  /// 1. Send STLS response (agreeing to TLS)
+  /// 2. Perform TLS handshake using a self-signed certificate
+  /// 3. Re-attach the data listener to the SecureSocket
+  /// 4. The device will then send CNXN over the TLS channel
+  Future<void> _upgradeToTls() async {
+    final socket = _socket;
+    if (socket == null) return;
+
+    // Send STLS response to agree to the TLS upgrade
+    socket.add(AdbProtocol.generateStls());
+    await socket.flush();
+    if (verbose) print('Sent STLS response, performing TLS handshake...');
+
+    // Pause the plaintext listener so SecureSocket can take over the socket
+    // without closing the underlying connection.
+    _socketDataSubscription?.pause();
+
+    // Create a SecurityContext with a self-signed certificate from our RSA keypair
+    final securityContext = AdbCertificate.createTransportSecurityContext(crypto.keyPair);
+
+    try {
+      // Upgrade the socket to TLS
+      final secureSocket = await SecureSocket.secure(
+        socket,
+        context: securityContext,
+        onBadCertificate: (_) => true, // Accept device's self-signed certificate
+      );
+
+      // Clear any plaintext parser state before the TLS socket takes over.
+      _inputBuffer.clear();
+
+      // Re-attach the listener to the new SecureSocket
+      _socketDataSubscription = secureSocket.listen(
+        _handleAdbInput,
+        onDone: () {
+          _socketConnected = false;
+          _socketConnectedController.add(_socketConnected);
+        },
+        onError: (error) {
+          _socketConnected = false;
+          _socketConnectedController.add(_socketConnected);
+        },
+      );
+
+      // Replace the socket reference
+      _socket = secureSocket;
+      _tlsEnabled = true;
+
+      if (verbose) print('TLS handshake complete, waiting for device CNXN...');
+    } catch (e) {
+      if (verbose) {
+        print('TLS handshake failed: $e');
+      }
+      _socketConnected = false;
+      _socketConnectedController.add(_socketConnected);
+      _adbConnectedController.add(false);
     }
   }
 

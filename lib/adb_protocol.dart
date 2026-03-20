@@ -1,4 +1,4 @@
-// Copyright 2024 Pepe Tiebosch (byme.dev). All rights reserved.
+// Copyright 2026 Pepe Tiebosch (byme.dev). All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -48,8 +48,18 @@ class AdbProtocol {
   /// WRTE is the write stream message. It is sent with a payload that is the data to write to the stream.
   static const int CMD_WRTE = 0x45545257;
 
+  /// STLS is the start TLS message. It is sent by Android 11+ devices to require TLS encryption.
+  static const int CMD_STLS = 0x534c5453;
+
+  /// The TLS version used in the STLS exchange
+  static const int STLS_VERSION = 0x01000000;
+
   static Uint8List generateConnect() {
     return generateMessage(CMD_CNXN, CONNECT_VERSION, CONNECT_MAXDATA, CONNECT_PAYLOAD);
+  }
+
+  static Uint8List generateStls() {
+    return generateMessage(CMD_STLS, STLS_VERSION, 0, null);
   }
 
   static Uint8List generateAuth(int authType, Uint8List payload) {

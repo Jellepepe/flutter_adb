@@ -10,6 +10,11 @@ import 'package:flutter_adb/adb_connection.dart';
 import 'package:flutter_adb/adb_crypto.dart';
 import 'package:flutter_adb/adb_stream.dart';
 
+export 'package:flutter_adb/adb_connection.dart';
+export 'package:flutter_adb/adb_crypto.dart';
+export 'package:flutter_adb/adb_pairing.dart';
+export 'package:flutter_adb/adb_stream.dart';
+
 class Adb {
   /// Convenience method to open an ADB connection, open a shell and send a single command, then closing the connection.
   /// The function will return the sanitized output of the command.

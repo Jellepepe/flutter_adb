@@ -1,12 +1,13 @@
-// Copyright 2024 Pepe Tiebosch (byme.dev). All rights reserved.
+// Copyright 2026 Pepe Tiebosch (byme.dev). All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import 'dart:convert';
+import 'dart:io' show Platform;
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:pointycastle/export.dart';
-import 'package:pointycastle/src/platform_check/platform_check.dart';
 
 class AdbCrypto {
   /// The RSA signature padding used by ADB
@@ -34,18 +35,24 @@ class AdbCrypto {
   ];
 
   static const int KEY_LENGTH_BITS = 2048;
-
   static const int KEY_LENGTH_BYTES = KEY_LENGTH_BITS ~/ 8;
-
   static const int KEY_LENGTH_WORDS = KEY_LENGTH_BYTES ~/ 4;
 
   late final AsymmetricKeyPair<RSAPublicKey, RSAPrivateKey> _keyPair;
+  final String adbKeyName;
 
-  AdbCrypto({AsymmetricKeyPair<RSAPublicKey, RSAPrivateKey>? keyPair}) : _keyPair = keyPair ?? generateAdbKeyPair();
+  AdbCrypto({
+    AsymmetricKeyPair<RSAPublicKey, RSAPrivateKey>? keyPair,
+    String? adbKeyName,
+  })  : _keyPair = keyPair ?? generateAdbKeyPair(),
+        adbKeyName = _sanitizeAdbKeyName(adbKeyName ?? _defaultAdbKeyName());
+
+  /// The RSA key pair used for ADB authentication and TLS.
+  AsymmetricKeyPair<RSAPublicKey, RSAPrivateKey> get keyPair => _keyPair;
 
   @override
   String toString() {
-    return 'AdbCrypto: Modulus: ${_keyPair.publicKey.modulus}, Public Exponent: ${_keyPair.publicKey.publicExponent}';
+    return 'AdbCrypto: Modulus: ${_keyPair.publicKey.modulus}, Public Exponent: ${_keyPair.publicKey.publicExponent}, Name: $adbKeyName';
   }
 
   static Uint8List convertRsaPublicKeyToAdbFormat(RSAPublicKey publicKey) {
@@ -73,27 +80,33 @@ class AdbCrypto {
     return nData2;
   }
 
-  Uint8List getAdbPublicKeyPayload() {
-    Uint8List adbPublicKey = convertRsaPublicKeyToAdbFormat(_keyPair.publicKey);
+  /// Returns the raw 524-byte ADB public key structure.
+  Uint8List getRawAdbPublicKey() {
+    return convertRsaPublicKeyToAdbFormat(_keyPair.publicKey);
+  }
 
-    String keyString = base64Encode(adbPublicKey);
-    keyString += ' unknown@unknown\x00';
+  /// Returns the base64-encoded ADB public key string with metadata (for USB AUTH).
+  Uint8List getAdbPublicKeyPayload() {
+    final adbPublicKey = getRawAdbPublicKey();
+    final keyString = '${base64Encode(adbPublicKey)} $adbKeyName\x00';
     return utf8.encode(keyString);
   }
 
   Uint8List signAdbTokenPayload(Uint8List payload) {
     final signer = RSASigner(SHA1Digest(), '06052b0e03021a');
-
     signer.init(true, PrivateKeyParameter<RSAPrivateKey>(_keyPair.privateKey));
 
     final paddedPayload = Uint8List.fromList([...SIGNATURE_PADDING, ...payload]);
-
     return signer.generateSignature(paddedPayload).bytes;
   }
 
   static AsymmetricKeyPair<RSAPublicKey, RSAPrivateKey> generateAdbKeyPair() {
+    final random = Random.secure();
+    final seed = Uint8List.fromList(
+      List<int>.generate(32, (_) => random.nextInt(256)),
+    );
     final secureRandom = SecureRandom('Fortuna')
-      ..seed(KeyParameter(Platform.instance.platformEntropySource().getBytes(32)));
+      ..seed(KeyParameter(seed));
     final keyGen = RSAKeyGenerator();
 
     keyGen.init(
@@ -104,12 +117,24 @@ class AdbCrypto {
     );
 
     final pair = keyGen.generateKeyPair();
-    // Cast the generated key pair into the RSA key types
+    return AsymmetricKeyPair<RSAPublicKey, RSAPrivateKey>(pair.publicKey, pair.privateKey);
+  }
 
-    final myPublic = pair.publicKey as RSAPublicKey;
-    final myPrivate = pair.privateKey as RSAPrivateKey;
+  static String _defaultAdbKeyName() {
+    final env = Platform.environment;
+    final user = env['USERNAME'] ?? env['USER'] ?? 'flutter';
+    String host;
+    try {
+      host = Platform.localHostname;
+    } catch (_) {
+      host = 'flutter-adb';
+    }
+    return '$user@$host';
+  }
 
-    return AsymmetricKeyPair<RSAPublicKey, RSAPrivateKey>(myPublic, myPrivate);
+  static String _sanitizeAdbKeyName(String value) {
+    final trimmed = value.trim().replaceAll(RegExp(r'\s+'), '_');
+    return trimmed.isEmpty ? 'flutter@flutter-adb' : trimmed;
   }
 }
 
