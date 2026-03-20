@@ -1,4 +1,4 @@
-## 0.2.0
+## 1.0.0
 
 * Added Android 11+ wireless pairing support via `AdbPairing.pair(...)`
 * Added host-generated QR pairing via `AdbQrPairingData.generate()` and `AdbPairing.pairWithQr(...)`
