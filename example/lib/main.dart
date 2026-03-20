@@ -22,6 +22,11 @@ class AdbConnectionNotifier extends Notifier<AdbConnection?> {
     state?.disconnect();
     state = AdbConnection(ip, port, AdbCrypto(), verbose: true);
   }
+
+  void disconnect() {
+    state?.disconnect();
+    state = null;
+  }
 }
 
 final adbConnectionProvider = NotifierProvider<AdbConnectionNotifier, AdbConnection?>(AdbConnectionNotifier.new);
@@ -156,16 +161,28 @@ class _MyHomePageState extends ConsumerState<MyHomePage> {
                         },
                       ),
                     ),
-                    TextButton(
-                      onPressed: () {
-                        if (_formKey.currentState!.validate()) {
-                          ref.read(adbConnectionProvider.notifier).setConnection(
-                                _ipController.text,
-                                int.parse(_portController.text),
-                              );
-                        }
+                    StreamBuilder<bool>(
+                      stream: ref.watch(adbConnectionProvider)?.onConnectionChanged,
+                      initialData: false,
+                      builder: (context, snapshot) {
+                        final connection = ref.watch(adbConnectionProvider);
+                        final isConnected = snapshot.data ?? false;
+                        return TextButton(
+                          onPressed: () {
+                            if (connection != null) {
+                              ref.read(adbConnectionProvider.notifier).disconnect();
+                            } else {
+                              if (_formKey.currentState!.validate()) {
+                                ref.read(adbConnectionProvider.notifier).setConnection(
+                                      _ipController.text,
+                                      int.parse(_portController.text),
+                                    );
+                              }
+                            }
+                          },
+                          child: Text(connection != null ? (isConnected ? 'Disconnect' : 'Cancel') : 'Connect'),
+                        );
                       },
-                      child: const Text('Connect'),
                     ),
                   ],
                 ),
