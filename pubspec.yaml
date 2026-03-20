@@ -1,6 +1,6 @@
 name: flutter_adb
 description: "Native dart implementation of a network ADB (Android Debug Bridge) client."
-version: 0.1.1
+version: 1.0.0
 repository: https://github.com/Jellepepe/flutter_adb
 
 environment:
@@ -10,6 +10,7 @@ environment:
 dependencies:
   pointycastle: ^4.0.0
   edwards25519: ^1.0.5
+  multicast_dns: ^0.3.3
 
 dev_dependencies:
   flutter_lints: ^6.0.0
