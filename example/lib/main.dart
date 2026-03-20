@@ -6,6 +6,7 @@ import 'dart:async';
 
 import 'package:example/adb_terminal.dart';
 import 'package:example/example_storage.dart';
+import 'package:example/qr_pairing_panel.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_adb/flutter_adb.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -89,6 +90,54 @@ class AdbPairingNotifier extends Notifier<PairingStatus> {
 
 final adbPairingProvider = NotifierProvider<AdbPairingNotifier, PairingStatus>(AdbPairingNotifier.new);
 
+enum QrPairingStatus { idle, pairing, success, error }
+
+final class QrPairingSession {
+  const QrPairingSession({
+    this.status = QrPairingStatus.idle,
+    this.qrData,
+    this.result,
+  });
+
+  final QrPairingStatus status;
+  final AdbQrPairingData? qrData;
+  final AdbPairingResult? result;
+}
+
+class QrPairingNotifier extends Notifier<QrPairingSession> {
+  @override
+  QrPairingSession build() {
+    return const QrPairingSession();
+  }
+
+  Future<void> pair() async {
+    final qrData = AdbQrPairingData.generate();
+    state = QrPairingSession(status: QrPairingStatus.pairing, qrData: qrData);
+
+    try {
+      final crypto = await ref.read(adbCryptoProvider.future);
+      final result = await AdbPairing.pairWithQr(qrData, crypto, verbose: true);
+      state = QrPairingSession(
+        status: result.success ? QrPairingStatus.success : QrPairingStatus.error,
+        qrData: qrData,
+        result: result,
+      );
+    } catch (e) {
+      state = QrPairingSession(
+        status: QrPairingStatus.error,
+        qrData: qrData,
+        result: AdbPairingResult(success: false, errorMessage: '$e'),
+      );
+    }
+  }
+
+  void reset() {
+    state = const QrPairingSession();
+  }
+}
+
+final qrPairingProvider = NotifierProvider<QrPairingNotifier, QrPairingSession>(QrPairingNotifier.new);
+
 class AdbStreamNotifier extends AsyncNotifier<AdbStream?> {
   @override
   FutureOr<AdbStream?> build() async {
@@ -140,7 +189,35 @@ class _MyHomePageState extends ConsumerState<MyHomePage> {
   final TextEditingController _pairingCodeController = TextEditingController();
 
   bool _showPairing = false;
+  bool _showQrPairing = false;
   bool _isCreatingConnection = false;
+
+  void _toggleCodePairing() {
+    setState(() {
+      _showPairing = !_showPairing;
+      if (_showPairing) {
+        _showQrPairing = false;
+        ref.read(qrPairingProvider.notifier).reset();
+      }
+    });
+  }
+
+  void _toggleQrPairing() {
+    setState(() {
+      _showQrPairing = !_showQrPairing;
+      if (_showQrPairing) {
+        _showPairing = false;
+        ref.read(adbPairingProvider.notifier).reset();
+      } else {
+        ref.read(qrPairingProvider.notifier).reset();
+      }
+    });
+  }
+
+  void _closeQrPairing() {
+    setState(() => _showQrPairing = false);
+    ref.read(qrPairingProvider.notifier).reset();
+  }
 
   @override
   void dispose() {
@@ -158,14 +235,8 @@ class _MyHomePageState extends ConsumerState<MyHomePage> {
     try {
       final ip = _ipController.text;
       final port = int.parse(_portController.text);
-      await ref.read(adbConnectionProvider.notifier).setConnection(
-            ip,
-            port,
-          );
-      await ref.read(savedDevicesProvider.notifier).saveDevice(
-            ip: ip,
-            port: port,
-          );
+      await ref.read(adbConnectionProvider.notifier).setConnection(ip, port);
+      await ref.read(savedDevicesProvider.notifier).saveDevice(ip: ip, port: port);
       unawaited(_refreshSavedDeviceLabel(ip, port));
     } finally {
       if (mounted) {
@@ -203,6 +274,45 @@ class _MyHomePageState extends ConsumerState<MyHomePage> {
     } else if (finalStatus == PairingStatus.error) {
       messenger.showSnackBar(
         const SnackBar(content: Text('Pairing Failed')),
+      );
+    }
+  }
+
+  Future<void> _startQrPairing() async {
+    await ref.read(qrPairingProvider.notifier).pair();
+    if (!mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final session = ref.read(qrPairingProvider);
+    final result = session.result;
+    if (session.status == QrPairingStatus.success) {
+      final endpoint = result?.connectEndpoint;
+      if (endpoint != null) {
+        _ipController.text = endpoint.host;
+        _portController.text = endpoint.port.toString();
+        await ref.read(adbConnectionProvider.notifier).setConnection(
+              endpoint.host,
+              endpoint.port,
+            );
+        await ref.read(savedDevicesProvider.notifier).saveDevice(
+              ip: endpoint.host,
+              port: endpoint.port,
+            );
+        unawaited(_refreshSavedDeviceLabel(endpoint.host, endpoint.port));
+      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            endpoint == null
+                ? 'QR pairing successful. Resolve the connect endpoint manually if needed.'
+                : 'QR pairing successful. Device saved and connecting automatically.',
+          ),
+        ),
+      );
+      _closeQrPairing();
+    } else if (session.status == QrPairingStatus.error) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(result?.errorMessage ?? 'QR pairing failed')),
       );
     }
   }
@@ -251,6 +361,23 @@ class _MyHomePageState extends ConsumerState<MyHomePage> {
       return '$ip:$port';
     }
     return '$combined ($ip)';
+  }
+
+  String? _qrStatusText(QrPairingSession session) {
+    switch (session.status) {
+      case QrPairingStatus.idle:
+        return 'The host app will wait on mDNS for the requested studio-* pairing service after the device scans the QR code.';
+      case QrPairingStatus.pairing:
+        return 'Waiting for the device to scan the QR code and publish the requested pairing service over mDNS.';
+      case QrPairingStatus.success:
+        final connect = session.result?.connectEndpoint;
+        if (connect == null) {
+          return 'Pairing succeeded. No connect endpoint was discovered automatically.';
+        }
+        return 'Pairing succeeded. Next connect target: ${connect.host}:${connect.port}';
+      case QrPairingStatus.error:
+        return session.result?.errorMessage ?? 'QR pairing failed.';
+    }
   }
 
   Widget _buildConnectionControls(AsyncValue<AdbCrypto> cryptoAsync) {
@@ -336,12 +463,12 @@ class _MyHomePageState extends ConsumerState<MyHomePage> {
                     },
                   ),
                   OutlinedButton(
-                    onPressed: () {
-                      setState(() {
-                        _showPairing = !_showPairing;
-                      });
-                    },
-                    child: Text(_showPairing ? 'Hide Pairing' : 'Pair Device'),
+                    onPressed: _toggleCodePairing,
+                    child: Text(_showPairing ? 'Hide Code Pairing' : 'Pair With Code'),
+                  ),
+                  OutlinedButton(
+                    onPressed: _toggleQrPairing,
+                    child: Text(_showQrPairing ? 'Hide QR Pairing' : 'Pair With QR'),
                   ),
                 ],
               ),
@@ -433,6 +560,7 @@ class _MyHomePageState extends ConsumerState<MyHomePage> {
   @override
   Widget build(BuildContext context) {
     final cryptoAsync = ref.watch(adbCryptoProvider);
+    final qrSession = ref.watch(qrPairingProvider);
     final savedDevicesAsync = ref.watch(savedDevicesProvider);
     final activeConnection = ref.watch(adbConnectionProvider);
 
@@ -479,76 +607,84 @@ class _MyHomePageState extends ConsumerState<MyHomePage> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        actions: [],
         title: StreamBuilder<bool>(
           stream: ref.watch(adbConnectionProvider)?.onConnectionChanged,
           initialData: false,
           builder: (context, snapshot) {
             final connection = ref.watch(adbConnectionProvider);
             if (connection == null) {
-              return const Text('ADB Flutter Example, Not connected', style: TextStyle(fontSize: 32));
+              return Text(_showQrPairing ? 'QR Pairing' : 'ADB Flutter Example, Not connected',
+                  style: const TextStyle(fontSize: 20));
             }
             if (snapshot.hasData) {
               if (snapshot.data ?? false) {
                 return Text(
                   'ADB Flutter Example, Connected to: ${connection.ip}:${connection.port}',
-                  style: const TextStyle(fontSize: 32),
+                  style: const TextStyle(fontSize: 20),
                 );
               }
               return const Text(
                 'ADB Flutter Example, Connecting...',
-                style: TextStyle(fontSize: 32),
+                style: TextStyle(fontSize: 20),
               );
             }
             return const CircularProgressIndicator();
           },
         ),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final showSidebar = activeConnection == null && constraints.maxWidth >= 1100;
+      body: _showQrPairing
+          ? QrPairingPanel(
+              pairingData: qrSession.qrData,
+              isPairing: qrSession.status == QrPairingStatus.pairing,
+              statusText: _qrStatusText(qrSession),
+              onStart: cryptoAsync.isLoading ? null : _startQrPairing,
+              onCancel: _closeQrPairing,
+            )
+          : Padding(
+              padding: const EdgeInsets.all(16),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final showSidebar = activeConnection == null && constraints.maxWidth >= 1100;
 
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (activeConnection == null) ...[
-                  _buildConnectionControls(cryptoAsync),
-                  const SizedBox(height: 20),
-                ],
-                Expanded(
-                  child: showSidebar
-                      ? Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            SizedBox(
-                              width: 260,
-                              child: SingleChildScrollView(
-                                child: _buildSavedConnections(savedDevicesAsync),
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (activeConnection == null) ...[
+                        _buildConnectionControls(cryptoAsync),
+                        const SizedBox(height: 20),
+                      ],
+                      Expanded(
+                        child: showSidebar
+                            ? Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  SizedBox(
+                                    width: 260,
+                                    child: SingleChildScrollView(
+                                      child: _buildSavedConnections(savedDevicesAsync),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 24),
+                                  Expanded(child: Center(child: terminal)),
+                                ],
+                              )
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (activeConnection == null) ...[
+                                    _buildSavedConnections(savedDevicesAsync),
+                                    const SizedBox(height: 20),
+                                  ],
+                                  Expanded(child: Center(child: terminal)),
+                                ],
                               ),
-                            ),
-                            const SizedBox(width: 24),
-                            Expanded(child: Center(child: terminal)),
-                          ],
-                        )
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (activeConnection == null) ...[
-                              _buildSavedConnections(savedDevicesAsync),
-                              const SizedBox(height: 20),
-                            ],
-                            Expanded(child: Center(child: terminal)),
-                          ],
-                        ),
-                ),
-              ],
-            );
-          },
-        ),
-      ),
-      floatingActionButton: activeConnection == null
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+      floatingActionButton: activeConnection == null || _showQrPairing
           ? null
           : FloatingActionButton(
               onPressed: cryptoAsync.isLoading

@@ -34,6 +34,7 @@ dependencies:
   google_fonts: 8.0.2
   shared_preferences: ^2.5.3
   flutter_secure_storage: ^9.2.4
+  qr_flutter: ^4.1.0
   flutter:
     sdk: flutter
 

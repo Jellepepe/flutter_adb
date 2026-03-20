@@ -1,30 +1,30 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
+import 'package:example/qr_pairing_panel.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_adb/flutter_adb.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:example/main.dart';
-
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('renders generated qr pairing details',
+      (WidgetTester tester) async {
+    final qr =
+        AdbQrPairingData(serviceName: 'studio-test123', password: 'pw123456');
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: QrPairingPanel(
+            pairingData: qr,
+            statusText: 'Waiting for scan',
+            onStart: null,
+          ),
+        ),
+      ),
+    );
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.text('QR Pairing'), findsOneWidget);
+    expect(find.textContaining('studio-test123'), findsOneWidget);
+    expect(find.textContaining('pw123456'), findsOneWidget);
+    expect(find.text('Waiting for scan'), findsOneWidget);
+    expect(find.text('Generate New QR'), findsOneWidget);
   });
 }

@@ -5,6 +5,7 @@
 It supports:
 - Connecting to an existing ADB TCP endpoint
 - Android 11+ wireless pairing with `STLS` transport upgrade and `SPAKE2` pairing code flow
+- Android Studio style QR pairing with mDNS discovery
 - Opening shell streams and sending one-off commands
 
 The package is intended for Flutter and Dart apps that need to talk directly to `adbd` over the network, including apps that connect to another device on the LAN or to an ADB daemon running on the same device.
@@ -15,6 +16,7 @@ The package is intended for Flutter and Dart apps that need to talk directly to 
 - RSA key generation for ADB authentication
 - Custom ADB key name metadata such as `user@host`
 - Wireless pairing via `AdbPairing.pair(...)`
+- QR pairing via `AdbQrPairingData.generate()` + `AdbPairing.pairWithQr(...)`
 - Regular ADB transport via `AdbConnection`
 - Convenience helper for single shell commands via `Adb.sendSingleCommand(...)`
 
@@ -40,7 +42,7 @@ final crypto = AdbCrypto(
 );
 ```
 
-### 2. [OPTIONAL] Pair with an Android 11+ device
+### 2a. [OPTIONAL] Pair with an Android 11+ device using a 6-digit pairing code
 
 Use the wireless debugging pairing port and 6-digit pairing code shown on the device.
 
@@ -59,6 +61,29 @@ if (!paired) {
 ```
 
 After pairing succeeds, connect to the device's regular ADB port with the same `crypto` object.
+
+### 2b. [OPTIONAL] Pair with an Android 11+ device using a generated QR code
+
+This matches Android Studio's host-generated QR flow: the host app creates a QR payload, the device scans it, then the host discovers the requested pairing service over mDNS.
+
+```dart
+final qr = AdbQrPairingData.generate();
+
+// Render qr.qrPayload as a QR code in your Flutter UI.
+final result = await AdbPairing.pairWithQr(
+  qr,
+  crypto,
+  verbose: true,
+);
+
+if (!result.success) {
+  throw Exception(result.errorMessage ?? 'QR pairing failed');
+}
+
+if (result.connectEndpoint != null) {
+  print('Resolved connect endpoint: ${result.connectEndpoint!.host}:${result.connectEndpoint!.port}');
+}
+```
 
 ### 3. Open an ADB connection
 
@@ -135,15 +160,28 @@ print(output);
 4. Connect to the device's normal ADB port with `AdbConnection(..., crypto)`.
 5. Reuse the same `crypto` for future sessions.
 
+## Typical QR Flow
+
+1. Create `final qr = AdbQrPairingData.generate()`.
+2. Render `qr.qrPayload` as a QR code in your app.
+3. On the Android device, open **Wireless debugging** and scan that QR code.
+4. Call `AdbPairing.pairWithQr(qr, crypto)`.
+5. If `result.connectEndpoint` is present, use it with `AdbConnection`; otherwise resolve or enter the regular ADB connect endpoint separately.
+
 ## Persisting Keys
 
 The package generates keys in memory, but it does not persist them by default.
 If you want a device to keep trusting your app across launches, you need to persist the RSA keypair. The example app shows an example of how to do this.
 
+## Android Host Caveat
+
+QR pairing relies on mDNS. On Android hosts, multicast discovery may require extra platform-specific multicast enablement on some devices and ROMs.
+
 ## Example App
 
 The example app demonstrates:
 - Pairing with a device by pairing code
+- Pairing with a device by generated QR code
 - Connecting to the paired device
 - Opening a shell-backed terminal UI
 - Persisting the RSA keypair and saved devices
