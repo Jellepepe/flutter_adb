@@ -21,22 +21,23 @@ class ShellBufferNotifier extends Notifier<String> {
   }
 }
 
-final shellBufferProvider = NotifierProvider<ShellBufferNotifier, String>(ShellBufferNotifier.new);
+final shellBufferProvider = NotifierProvider.autoDispose<ShellBufferNotifier, String>(ShellBufferNotifier.new);
 
-final shellOutput = Provider<List<String>>((ref) {
+final shellOutput = Provider.autoDispose<List<String>>((ref) {
   List<String> shellLines = ref.watch(shellBufferProvider).split('\n');
   return shellLines.sublist(max(0, shellLines.length - 101), shellLines.length - 1);
 });
 
-final shellCurLine = Provider<String>((ref) {
+final shellCurLine = Provider.autoDispose<String>((ref) {
   List<String> shellLines = ref.watch(shellBufferProvider).split('\n');
   return shellLines[shellLines.length - 1];
 });
 
 class AdbTerminal extends ConsumerStatefulWidget {
-  const AdbTerminal({super.key, required this.stream});
+  const AdbTerminal({super.key, required this.stream, this.onDisconnect});
 
   final AdbStream stream;
+  final VoidCallback? onDisconnect;
 
   @override
   ConsumerState<ConsumerStatefulWidget> createState() => _AdbTerminalState();
@@ -122,6 +123,12 @@ class _AdbTerminalState extends ConsumerState<AdbTerminal> {
                       _controller.clear();
                     },
             ),
+            if (widget.onDisconnect != null)
+              IconButton(
+                icon: const Icon(Icons.link_off),
+                tooltip: 'Disconnect',
+                onPressed: widget.onDisconnect,
+              ),
           ],
         ),
       ],

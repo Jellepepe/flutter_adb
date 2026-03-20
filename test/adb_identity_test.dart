@@ -39,4 +39,21 @@ void main() {
 
     expect(keyPemA, keyPemB);
   });
+
+  test('Stored keypair round-trips through AdbCrypto storage helpers', () {
+    final original = AdbCrypto(adbKeyName: 'alice@workstation');
+
+    final stored = original.exportKeyPairForStorage();
+    final restoredKeyPair = AdbCrypto.keyPairFromStorageMap(stored);
+    final restored = AdbCrypto(
+      keyPair: restoredKeyPair,
+      adbKeyName: 'alice@workstation',
+    );
+
+    expect(restored.getRawAdbPublicKey(), original.getRawAdbPublicKey());
+    expect(
+      utf8.decode(restored.getAdbPublicKeyPayload(), allowMalformed: false),
+      utf8.decode(original.getAdbPublicKeyPayload(), allowMalformed: false),
+    );
+  });
 }

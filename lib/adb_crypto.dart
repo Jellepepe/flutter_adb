@@ -50,6 +50,21 @@ class AdbCrypto {
   /// The RSA key pair used for ADB authentication and TLS.
   AsymmetricKeyPair<RSAPublicKey, RSAPrivateKey> get keyPair => _keyPair;
 
+  /// Serializes the RSA keypair into a JSON-safe map of hex strings.
+  ///
+  /// This is useful when callers want to persist the paired keypair and
+  /// restore it later with [keyPairFromStorageMap].
+  Map<String, String> exportKeyPairForStorage() {
+    final privateKey = _keyPair.privateKey;
+    return <String, String>{
+      'modulus': _encodeBigIntHex(privateKey.modulus!),
+      'publicExponent': _encodeBigIntHex(privateKey.publicExponent!),
+      'privateExponent': _encodeBigIntHex(privateKey.privateExponent!),
+      'p': _encodeBigIntHex(privateKey.p!),
+      'q': _encodeBigIntHex(privateKey.q!),
+    };
+  }
+
   @override
   String toString() {
     return 'AdbCrypto: Modulus: ${_keyPair.publicKey.modulus}, Public Exponent: ${_keyPair.publicKey.publicExponent}, Name: $adbKeyName';
@@ -120,6 +135,21 @@ class AdbCrypto {
     return AsymmetricKeyPair<RSAPublicKey, RSAPrivateKey>(pair.publicKey, pair.privateKey);
   }
 
+  static AsymmetricKeyPair<RSAPublicKey, RSAPrivateKey> keyPairFromStorageMap(
+    Map<String, dynamic> storedKeyPair,
+  ) {
+    final modulus = _decodeBigIntHex(storedKeyPair['modulus']);
+    final publicExponent = _decodeBigIntHex(storedKeyPair['publicExponent']);
+    final privateExponent = _decodeBigIntHex(storedKeyPair['privateExponent']);
+    final p = _decodeBigIntHex(storedKeyPair['p']);
+    final q = _decodeBigIntHex(storedKeyPair['q']);
+
+    return AsymmetricKeyPair<RSAPublicKey, RSAPrivateKey>(
+      RSAPublicKey(modulus, publicExponent),
+      RSAPrivateKey(modulus, privateExponent, p, q),
+    );
+  }
+
   static String _defaultAdbKeyName() {
     final env = Platform.environment;
     final user = env['USERNAME'] ?? env['USER'] ?? 'flutter';
@@ -135,6 +165,15 @@ class AdbCrypto {
   static String _sanitizeAdbKeyName(String value) {
     final trimmed = value.trim().replaceAll(RegExp(r'\s+'), '_');
     return trimmed.isEmpty ? 'flutter@flutter-adb' : trimmed;
+  }
+
+  static String _encodeBigIntHex(BigInt value) => value.toRadixString(16);
+
+  static BigInt _decodeBigIntHex(dynamic value) {
+    if (value is! String || value.isEmpty) {
+      throw ArgumentError('Stored RSA key value must be a non-empty hex string');
+    }
+    return BigInt.parse(value, radix: 16);
   }
 }
 

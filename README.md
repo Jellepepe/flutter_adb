@@ -1,76 +1,157 @@
 # flutter_adb
 
-Native dart implementation of the ADB network protocol, based loosely on the [Java version by Cameron Gutman](https://github.com/cgutman/AdbLib).  
-This package can be used to connect to Android devices with an open ADB port on your network, with some configurations it even allows self-ADB, e.g. connecting to an ADB instance on the same device as the app running the flutter app.
+`flutter_adb` is a pure Dart client for network ADB (Android Debug Bridge).
 
-## Usage
+It supports:
+- Connecting to an existing ADB TCP endpoint
+- Android 11+ wireless pairing with `STLS` transport upgrade and `SPAKE2` pairing code flow
+- Opening shell streams and sending one-off commands
 
-#### First create an ADB crypto object
+The package is intended for Flutter and Dart apps that need to talk directly to `adbd` over the network, including apps that connect to another device on the LAN or to an ADB daemon running on the same device.
 
-Depending on the security settings of the device you are connecting to, you may need to authenticate with an RSA keypair.  
-This package contains a helper class to generate the keypair and authenticate with the device, but you can also provide your own keypair.  
-The package uses pointycastle for RSA encryption, so you can also use your own keypair generated with that library.  
+## Features
+
+- Pure Dart implementation(!)
+- RSA key generation for ADB authentication
+- Custom ADB key name metadata such as `user@host`
+- Wireless pairing via `AdbPairing.pair(...)`
+- Regular ADB transport via `AdbConnection`
+- Convenience helper for single shell commands via `Adb.sendSingleCommand(...)`
+
+## Quick Start
+
+### 1. Create or provide an ADB keypair
+
+`AdbCrypto` holds the RSA keypair used for both pairing and later ADB connections.
+You must reuse the same `AdbCrypto` instance, or the same underlying keypair, after pairing.
 
 ```dart
-final AsymmetricKeyPair<RSAPublicKey, RSAPrivateKey> keyPair = AdbCrypto.generateRSAKeyPair();
-final crypto = AdbCrypto(keyPair: keyPair);
-// Optionally call without the keypair to automatically generate one
-final crypto = AdbCrypto();
+final crypto = AdbCrypto(
+  adbKeyName: 'my-app@dart',
+);
 ```
-*The first time you connect to a device, you will need to authorize the connection from the device itself, after that the keypair will be stored on the device and you can connect without further interaction, provided you save and reuse the keypair.*  
 
-#### Next, create an ADB connection
+You can also provide your own PointyCastle RSA keypair:
+
 ```dart
-final adb = AdbConnection(
-  '127.0.0.1',
+final crypto = AdbCrypto(
+  keyPair: myKeyPair,
+  adbKeyName: 'my-app@dart',
+);
+```
+
+### 2. [OPTIONAL] Pair with an Android 11+ device
+
+Use the wireless debugging pairing port and 6-digit pairing code shown on the device.
+
+```dart
+final paired = await AdbPairing.pair(
+  '[IP_ADDRESS]',
+  6666,
+  '123456',
+  crypto,
+  verbose: true,
+);
+
+if (!paired) {
+  throw Exception('Pairing failed');
+}
+```
+
+After pairing succeeds, connect to the device's regular ADB port with the same `crypto` object.
+
+### 3. Open an ADB connection
+
+```dart
+final connection = AdbConnection(
+  '[IP_ADDRESS]',
   5555,
   crypto,
+  verbose: true,
 );
-bool connected = await connection.connect();
-// You can also listen for connection status changes
+
+final connected = await connection.connect();
+if (!connected) {
+  throw Exception('ADB connection failed');
+}
+```
+
+You can also observe connection state:
+
+```dart
 connection.onConnectionChanged.listen((connected) {
   print('Connected: $connected');
 });
 ```
-#### From here you can open a shell, etc.
+
+### 4. Open a shell stream
+
 ```dart
-final AdbStream shell = await connection.open('shell:');
-// Alteratively, you can use the convenience method
-final AdbStream shell = await connection.openShell();
-```
-#### Read and write to the stream
-```dart
-// Listen for incoming data
+final shell = await connection.openShell();
+
 shell.onPayload.listen((payload) {
-  print('Received: $payload');
+  print(utf8.decode(payload));
 });
-// Write data to the stream
-bool success = await shell.write('ls\n');
 
-// Close the stream
-shell.sendClose();
+await shell.writeString('pm list packages\n');
 ```
 
-### OR:
-#### Use the convenience method to open a shell, send a single command, and get the output
+When done:
+
 ```dart
-final String result = Adb.sendSingleCommand(
-  'monkey -p com.google.android.googlequicksearchbox 1;sleep 3;input keyevent KEYCODE_HOME',
-  ip: '127.0.0.1',
+await shell.sendClose();
+await connection.disconnect();
+```
+
+## Single Command Helper
+
+For simple use cases, `Adb.sendSingleCommand(...)` opens a connection, runs a shell command, collects the output, and disconnects. 
+
+> Note: For Android 11+ devices you need to pair first.
+
+```dart
+final output = await Adb.sendSingleCommand(
+  'date',
+  ip: '[IP_ADDRESS]',
   port: 5555,
   crypto: crypto,
 );
-print(result);
+
+print(output);
 ```
-*This method will automatically open a connection, open a shell, send a command, close the shell & connection, and then give the output, you can chain multiple commands together using the `;` operator.*
-## Example
-Check out the example app for a simple ADB terminal implementation (using riverpod).
+
+## Self-ADB or Android 10 Flow
+
+1. Enable TCP/IP debugging, or run `adb tcpip 5555` on your device.
+2. Connect to the device's normal ADB port with `AdbConnection(..., crypto)`.
+3. The device will ask you to authorize the connection. Reuse the same `AdbCrypto` for future sessions to avoid this popup in the future.
+
+
+## Typical Android 11+ Flow
+
+1. Enable **Wireless debugging** on the device.
+2. Start **Pair device with pairing code** on the device.
+3. Call `AdbPairing.pair(pairingIp, pairingPort, pairingCode, crypto)`.
+4. Connect to the device's normal ADB port with `AdbConnection(..., crypto)`.
+5. Reuse the same `crypto` for future sessions.
+
+## Persisting Keys
+
+The package generates keys in memory, but it does not persist them by default.
+If you want a device to keep trusting your app across launches, you need to persist the RSA keypair. The example app shows an example of how to do this.
+
+## Example App
+
+The example app demonstrates:
+- Pairing with a device by pairing code
+- Connecting to the paired device
+- Opening a shell-backed terminal UI
+- Persisting the RSA keypair and saved devices
+
+See [example/README.md](example/README.md) for details.
 
 ## License
-This project is licensed under a BSD-3 Clause License, see the included LICENSE file for the full text.
-While no code was directly reused, concepts and class structure was based loosely on the work by Cameron Gutman, also licensed under BSD 3-Clause.
 
-## Contribute
-Issues and pull requests are always welcome!
-If you found this project helpful, consider buying me a cup of :coffee:
-- [PayPal](https://www.paypal.me/bymedev)
+This project is licensed under the BSD 3-Clause License. See [LICENSE](LICENSE).
+
+The implementation is based conceptually on the ADB protocol specifications and was initially inspired by the [Java ADB client](https://github.com/cgutman/AdbLib) by Cameron Gutman. Some SPAKE2 code was written by referencing the [boringSSL](https://github.com/google/boringssl) implementation.
