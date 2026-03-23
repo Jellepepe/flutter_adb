@@ -108,11 +108,19 @@ class AdbCrypto {
   }
 
   Uint8List signAdbTokenPayload(Uint8List payload) {
-    final signer = RSASigner(SHA1Digest(), '06052b0e03021a');
-    signer.init(true, PrivateKeyParameter<RSAPrivateKey>(_keyPair.privateKey));
-
     final paddedPayload = Uint8List.fromList([...SIGNATURE_PADDING, ...payload]);
-    return signer.generateSignature(paddedPayload).bytes;
+    final engine = RSAEngine()..init(true, PrivateKeyParameter<RSAPrivateKey>(_keyPair.privateKey));
+    final signature = engine.process(paddedPayload);
+    if (signature.length == KEY_LENGTH_BYTES) {
+      return signature;
+    }
+    if (signature.length > KEY_LENGTH_BYTES) {
+      throw StateError('ADB signature exceeds expected key size');
+    }
+
+    final out = Uint8List(KEY_LENGTH_BYTES);
+    out.setRange(KEY_LENGTH_BYTES - signature.length, KEY_LENGTH_BYTES, signature);
+    return out;
   }
 
   static AsymmetricKeyPair<RSAPublicKey, RSAPrivateKey> generateAdbKeyPair() {
@@ -120,8 +128,7 @@ class AdbCrypto {
     final seed = Uint8List.fromList(
       List<int>.generate(32, (_) => random.nextInt(256)),
     );
-    final secureRandom = SecureRandom('Fortuna')
-      ..seed(KeyParameter(seed));
+    final secureRandom = SecureRandom('Fortuna')..seed(KeyParameter(seed));
     final keyGen = RSAKeyGenerator();
 
     keyGen.init(

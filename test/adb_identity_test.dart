@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_adb/adb_certificate.dart';
 import 'package:flutter_adb/adb_crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pointycastle/export.dart';
 
 void main() {
   test('ADB public key payload includes configured identity metadata', () {
@@ -54,6 +56,29 @@ void main() {
     expect(
       utf8.decode(restored.getAdbPublicKeyPayload(), allowMalformed: false),
       utf8.decode(original.getAdbPublicKeyPayload(), allowMalformed: false),
+    );
+  });
+
+  test('ADB token signature is verifiable with the stored public key', () {
+    final crypto = AdbCrypto(adbKeyName: 'alice@workstation');
+    final token = Uint8List.fromList(List<int>.generate(20, (index) => index + 1));
+
+    final signature = crypto.signAdbTokenPayload(token);
+
+    expect(signature, hasLength(AdbCrypto.KEY_LENGTH_BYTES));
+
+    final engine = RSAEngine()..init(false, PublicKeyParameter<RSAPublicKey>(crypto.keyPair.publicKey));
+    final verified = engine.process(signature);
+    final normalized = Uint8List(AdbCrypto.KEY_LENGTH_BYTES)
+      ..setRange(
+        AdbCrypto.KEY_LENGTH_BYTES - verified.length,
+        AdbCrypto.KEY_LENGTH_BYTES,
+        verified,
+      );
+
+    expect(
+      normalized,
+      Uint8List.fromList([...AdbCrypto.SIGNATURE_PADDING, ...token]),
     );
   });
 }
