@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:example/adb_terminal.dart';
 import 'package:example/example_storage.dart';
@@ -51,9 +52,10 @@ class AdbConnectionNotifier extends Notifier<AdbConnection?> {
   }
 
   Future<void> setConnection(String ip, int port) async {
-    state?.disconnect();
+    await state?.disconnect();
     final crypto = await ref.read(adbCryptoProvider.future);
     state = AdbConnection(ip, port, crypto, verbose: true);
+    await state?.connect();
   }
 
   void disconnect() {
@@ -144,7 +146,6 @@ class AdbStreamNotifier extends AsyncNotifier<AdbStream?> {
     final connection = ref.watch(adbConnectionProvider);
     if (connection == null) return null;
 
-    await connection.connect();
     return await connection.openShell();
   }
 }
@@ -324,19 +325,22 @@ class _MyHomePageState extends ConsumerState<MyHomePage> {
 
   Future<void> _refreshSavedDeviceLabel(String ip, int port) async {
     try {
-      final crypto = await ref.read(adbCryptoProvider.future);
-      final manufacturer = await Adb.sendSingleCommand(
-        'getprop ro.product.manufacturer',
-        ip: ip,
-        port: port,
-        crypto: crypto,
-      );
-      final model = await Adb.sendSingleCommand(
-        'getprop ro.product.model',
-        ip: ip,
-        port: port,
-        crypto: crypto,
-      );
+      final connection = ref.read(adbConnectionProvider);
+      if (connection == null) {
+        return;
+      }
+      final stream = await connection.openShell();
+      final command = 'getprop ro.product.manufacturer && getprop ro.product.model;exit\n';
+      await stream.writeString(command);
+      final combined = await stream.onPayload
+          .fold('', (prev, chunk) => prev + utf8.decode(chunk))
+          .timeout(const Duration(seconds: 10), onTimeout: () => '');
+      stream.close();
+      // Strip the echoed command prefix if present
+      final output = combined.contains(command.trim()) ? combined.split(command.trim()).last : combined;
+      final parts = output.trim().split('\n');
+      final manufacturer = parts.isNotEmpty ? parts[0].trim() : '';
+      final model = parts.length > 1 ? parts[1].trim() : '';
 
       final label = _buildDeviceLabel(manufacturer, model, ip, port);
       await ref.read(savedDevicesProvider.notifier).saveDevice(
@@ -344,8 +348,9 @@ class _MyHomePageState extends ConsumerState<MyHomePage> {
             port: port,
             label: label,
           );
-    } catch (_) {
+    } catch (e) {
       // Best-effort label enrichment for the example UI.
+      debugPrint('Failed to refresh device label for $ip:$port, error: $e');
     }
   }
 
