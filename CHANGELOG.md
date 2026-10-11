@@ -1,3 +1,8 @@
+## 1.1.0
+
+* Added customizable ADB transport support via `AdbTransportFactory`
+* Added a custom Socket transport example
+
 ## 1.0.0
 
 * Added Android 11+ wireless pairing support via `AdbPairing.pair(...)`

@@ -6,6 +6,7 @@ This example demonstrates the working `flutter_adb` flow end to end:
 - pair with an Android 11+ device using a pairing code
 - pair with an Android 11+ device using a generated QR code
 - connect to the device's normal ADB port
+- provide a custom ADB socket transport through `transportFactory`
 - open an interactive shell stream in a simple terminal UI
 
 ## Running the Example
@@ -57,6 +58,29 @@ That reuse is important. Pairing succeeds only for the RSA keypair that was pair
 The example persists:
 - the RSA keypair in secure storage
 - the saved device list in shared preferences
+
+### Custom socket transport
+
+Regular ADB connections in this example use `CustomSocketAdbTransport`,
+supplied to `AdbConnection` with `transportFactory`:
+
+```dart
+final connection = AdbConnection(
+  ip,
+  port,
+  crypto,
+  transportFactory: () => CustomSocketAdbTransport(
+    crypto,
+    socketFactory: connectExampleSocket,
+  ),
+);
+```
+
+`connectExampleSocket` creates the Dart `Socket` with a custom timeout and TCP
+options. `CustomSocketAdbTransport` adapts that socket to `AdbTransport` and
+also implements `AdbTlsTransport` for Android 11+ STLS connections. The same
+pattern can use a native, proxied, mocked, or otherwise application-specific
+socket factory.
 
 ## Notes
 

@@ -6,6 +6,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:example/adb_terminal.dart';
+import 'package:example/custom_socket_adb_transport.dart';
 import 'package:example/example_storage.dart';
 import 'package:example/qr_pairing_panel.dart';
 import 'package:flutter/material.dart';
@@ -54,7 +55,16 @@ class AdbConnectionNotifier extends Notifier<AdbConnection?> {
   Future<void> setConnection(String ip, int port) async {
     await state?.disconnect();
     final crypto = await ref.read(adbCryptoProvider.future);
-    state = AdbConnection(ip, port, crypto, verbose: true);
+    state = AdbConnection(
+      ip,
+      port,
+      crypto,
+      transportFactory: () => CustomSocketAdbTransport(
+        crypto,
+        socketFactory: connectExampleSocket,
+      ),
+      verbose: true,
+    );
     await state?.connect();
   }
 

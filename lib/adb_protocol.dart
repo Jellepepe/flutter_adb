@@ -67,7 +67,11 @@ class AdbProtocol {
   }
 
   static Uint8List generateOpen(int localId, String destination) {
-    return generateMessage(CMD_OPEN, localId, 0, utf8.encode(destination));
+    // NUL-terminate the OPEN destination for compatibility with older adbd.
+    // Older adbd overwrites the last payload byte with NUL, which would
+    // otherwise truncate the service name or command.
+    final terminatedDestination = destination.endsWith('\x00') ? destination : '$destination\x00';
+    return generateMessage(CMD_OPEN, localId, 0, utf8.encode(terminatedDestination));
   }
 
   static Uint8List generateWrite(int localId, int remoteId, Uint8List payload) {

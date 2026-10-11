@@ -3,14 +3,14 @@
 // found in the LICENSE file.
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter_adb/adb_certificate.dart';
 import 'package:flutter_adb/adb_crypto.dart';
 import 'package:flutter_adb/adb_message.dart';
 import 'package:flutter_adb/adb_protocol.dart';
 import 'package:flutter_adb/adb_stream.dart';
+import 'package:flutter_adb/adb_transport.dart';
+import 'package:flutter_adb/dart_socket_adb_transport.dart';
 
 class AdbConnection {
   final String ip;
@@ -18,53 +18,66 @@ class AdbConnection {
   final AdbCrypto crypto;
   final Map<int, AdbStream> openStreams = {};
   final bool verbose;
+  final AdbTransportFactory _transportFactory;
 
-  bool _socketConnected = false;
+  bool _transportConnected = false;
   bool _adbConnected = false;
 
   bool _sentSignature = false;
   bool _tlsEnabled = false;
-  Socket? _socket;
+  AdbTransport? _transport;
 
   Future? _sendLock;
 
   StreamSubscription<AdbMessage>? _adbMessageSubscription;
-  StreamSubscription<bool>? _socketConnectedSubscription;
-  StreamSubscription<Uint8List>? _socketDataSubscription;
+  StreamSubscription<bool>? _transportConnectedSubscription;
+  StreamSubscription<Uint8List>? _transportDataSubscription;
 
   /// Specifies the maximum amount data that can be sent to the remote peer.
   /// Only valid after a connection has been established.
   int? maxData;
 
-  final StreamController<AdbMessage> _adbStreamController = StreamController<AdbMessage>.broadcast();
-  final StreamController<bool> _socketConnectedController = StreamController<bool>.broadcast();
-  final StreamController<bool> _adbConnectedController = StreamController<bool>.broadcast();
+  final StreamController<AdbMessage> _adbStreamController =
+      StreamController<AdbMessage>.broadcast();
+  final StreamController<bool> _transportConnectedController =
+      StreamController<bool>.broadcast();
+  final StreamController<bool> _adbConnectedController =
+      StreamController<bool>.broadcast();
 
   Stream<bool> get onConnectionChanged => _adbConnectedController.stream;
 
-  AdbConnection(this.ip, this.port, this.crypto, {this.verbose = false});
+  AdbConnection(
+    this.ip,
+    this.port,
+    this.crypto, {
+    AdbTransportFactory? transportFactory,
+    this.verbose = false,
+  }) : _transportFactory =
+            transportFactory ?? (() => DartSocketAdbTransport(crypto));
 
-  bool get connected => _socketConnected;
+  bool get connected => _transportConnected;
 
   /// Whether the connection is using TLS encryption (Android 11+).
   bool get tlsEnabled => _tlsEnabled;
 
   Future<bool> disconnect() async {
-    if (_socket == null) {
+    final transport = _transport;
+    if (transport == null) {
       return true;
     }
-    _socketConnected = false;
+    _transportConnected = false;
     _adbConnected = false;
     _sentSignature = false;
     _tlsEnabled = false;
-    _socketConnectedController.add(_socketConnected);
+    _inputBuffer.clear();
+    _transportConnectedController.add(_transportConnected);
 
     await _adbMessageSubscription?.cancel();
-    await _socketConnectedSubscription?.cancel();
-    await _socketDataSubscription?.cancel();
+    await _transportConnectedSubscription?.cancel();
+    await _transportDataSubscription?.cancel();
     _adbMessageSubscription = null;
-    _socketConnectedSubscription = null;
-    _socketDataSubscription = null;
+    _transportConnectedSubscription = null;
+    _transportDataSubscription = null;
 
     for (var stream in openStreams.values) {
       stream.close();
@@ -74,37 +87,42 @@ class AdbConnection {
     _sendLock = null;
 
     try {
-      await _socket!.flush();
-      _socket!.destroy();
+      await transport.close();
     } catch (_) {}
-    _socket = null;
+    _transport = null;
 
     return true;
   }
 
   Future<bool> connect() async {
-    if (_socket != null && _socketConnected == true) {
-      return _socketConnected;
+    if (_transport != null && _transportConnected == true) {
+      return _transportConnected;
+    }
+    if (_transport != null) {
+      await disconnect();
     }
     try {
-      // Create socket connection
-      _socket = await Socket.connect(InternetAddress(ip), port, timeout: const Duration(seconds: 1))
-        ..setOption(SocketOption.tcpNoDelay, true);
+      final transport = _transportFactory();
+      _transport = transport;
+      await transport.connect(ip, port);
 
-      // Add socket listener
-      _socketDataSubscription = _socket!.listen(
+      // Add transport listener
+      _transportDataSubscription = transport.input.listen(
         _handleAdbInput,
         onDone: () {
-          _socketConnected = false;
-          _socketConnectedController.add(_socketConnected);
+          _transportConnected = false;
+          _transportConnectedController.add(_transportConnected);
         },
         onError: (error) {
-          _socketConnected = false;
-          _socketConnectedController.add(_socketConnected);
+          _transportConnected = false;
+          _transportConnectedController.add(_transportConnected);
         },
       );
-      _socketConnected = true;
-      _socketConnectedController.add(_socketConnected);
+      _transportConnected = transport.connected;
+      if (!_transportConnected) {
+        throw StateError('Transport did not connect');
+      }
+      _transportConnectedController.add(_transportConnected);
 
       // Listen to adb messages
       await _adbMessageSubscription?.cancel();
@@ -114,27 +132,35 @@ class AdbConnection {
         await _handleAdbMessage(message);
       });
 
-      await _socketConnectedSubscription?.cancel();
-      _socketConnectedSubscription =
-          _socketConnectedController.stream.listen((connected) => connected ? {} : _adbConnectedController.add(false));
+      await _transportConnectedSubscription?.cancel();
+      _transportConnectedSubscription =
+          _transportConnectedController.stream.listen(
+        (connected) => connected ? {} : _adbConnectedController.add(false),
+      );
 
       // Send connection init
+      final adbConnected = _adbConnectedController.stream.first;
       await _connectAdb();
 
       // wait for adbConnected
-      return await _adbConnectedController.stream.first;
+      return await adbConnected;
     } catch (e) {
       print('Failed to connect to ADB: $e');
+      if (_transport != null) {
+        await disconnect();
+      } else {
+        _transportConnected = false;
+        _adbConnected = false;
+      }
       return false;
     }
   }
 
   Future<void> _connectAdb() async {
-    if (!_socketConnected) {
-      throw Exception('Socket not connected');
+    if (!_transportConnected) {
+      throw Exception('Transport not connected');
     }
-    _socket!.add(AdbProtocol.generateConnect());
-    await _socket!.flush();
+    await _transport!.write(AdbProtocol.generateConnect());
     if (verbose) print('Sent connect message');
   }
 
@@ -146,8 +172,8 @@ class AdbConnection {
   }
 
   Future<void> _sendRaw(Uint8List data, {bool flush = false}) async {
-    final socket = _socket;
-    if (socket == null) return;
+    final transport = _transport;
+    if (transport == null) return;
 
     final completer = Completer();
     final prevLock = _sendLock;
@@ -156,11 +182,8 @@ class AdbConnection {
 
     if (verbose) print('Sending adb data: $data');
     try {
-      socket.add(data);
-      if (flush) {
-        await socket.flush();
-        if (verbose) print('Flushed adb data: $data');
-      }
+      await transport.write(data);
+      if (flush && verbose) print('Flushed adb data: $data');
     } catch (e) {
       if (verbose) print('Error sending adb data: $e');
     } finally {
@@ -187,19 +210,41 @@ class AdbConnection {
       var payloadLength = byteData.getUint32(12, Endian.little);
       var checksum = byteData.getUint32(16, Endian.little);
       var magic = byteData.getUint32(20, Endian.little);
-      if (internalBuffer.length < AdbProtocol.ADB_HEADER_LENGTH + payloadLength) {
+      if (internalBuffer.length <
+          AdbProtocol.ADB_HEADER_LENGTH + payloadLength) {
         _inputBuffer.addAll(internalBuffer);
         break;
       }
       List<int>? payload;
       if (payloadLength > 0) {
-        payload = internalBuffer.sublist(AdbProtocol.ADB_HEADER_LENGTH, AdbProtocol.ADB_HEADER_LENGTH + payloadLength);
-        internalBuffer = internalBuffer.sublist(AdbProtocol.ADB_HEADER_LENGTH + payloadLength);
-        _adbStreamController
-            .add(AdbMessage(command, arg0, arg1, payloadLength, checksum, magic, Uint8List.fromList(payload)));
+        payload = internalBuffer.sublist(
+          AdbProtocol.ADB_HEADER_LENGTH,
+          AdbProtocol.ADB_HEADER_LENGTH + payloadLength,
+        );
+        internalBuffer = internalBuffer.sublist(
+          AdbProtocol.ADB_HEADER_LENGTH + payloadLength,
+        );
+        _adbStreamController.add(
+          AdbMessage(
+            command,
+            arg0,
+            arg1,
+            payloadLength,
+            checksum,
+            magic,
+            Uint8List.fromList(payload),
+          ),
+        );
       } else {
         internalBuffer = internalBuffer.sublist(AdbProtocol.ADB_HEADER_LENGTH);
-        final message = AdbMessage(command, arg0, arg1, payloadLength, checksum, magic);
+        final message = AdbMessage(
+          command,
+          arg0,
+          arg1,
+          payloadLength,
+          checksum,
+          magic,
+        );
         _adbStreamController.add(message);
         if (command == AdbProtocol.CMD_STLS) {
           if (internalBuffer.isNotEmpty) {
@@ -248,10 +293,18 @@ class AdbConnection {
         if (message.arg0 != AdbProtocol.AUTH_TYPE_TOKEN) return;
         // Send the token to the remote peer
         if (_sentSignature) {
-          await _sendRaw(AdbProtocol.generateAuth(AdbProtocol.AUTH_TYPE_RSA_PUBLIC, crypto.getAdbPublicKeyPayload()));
+          await _sendRaw(
+            AdbProtocol.generateAuth(
+              AdbProtocol.AUTH_TYPE_RSA_PUBLIC,
+              crypto.getAdbPublicKeyPayload(),
+            ),
+          );
         } else if (message.payload != null) {
           await _sendRaw(
-            AdbProtocol.generateAuth(AdbProtocol.AUTH_TYPE_SIGNATURE, crypto.signAdbTokenPayload(message.payload!)),
+            AdbProtocol.generateAuth(
+              AdbProtocol.AUTH_TYPE_SIGNATURE,
+              crypto.signAdbTokenPayload(message.payload!),
+            ),
           );
           _sentSignature = true;
         }
@@ -274,56 +327,30 @@ class AdbConnection {
     }
   }
 
-  /// Upgrades the current TCP socket to a TLS-encrypted connection.
+  /// Upgrades the current transport to a TLS-encrypted connection.
   ///
   /// This is called when the device sends a STLS message (Android 11+).
   /// The flow is:
   /// 1. Send STLS response (agreeing to TLS)
-  /// 2. Perform TLS handshake using a self-signed certificate
-  /// 3. Re-attach the data listener to the SecureSocket
-  /// 4. The device will then send CNXN over the TLS channel
+  /// 2. Ask the transport to perform its TLS handshake
+  /// 3. The device will then send CNXN over the TLS channel
   Future<void> _upgradeToTls() async {
-    final socket = _socket;
-    if (socket == null) return;
+    final transport = _transport;
+    if (transport == null) return;
 
     // Send STLS response to agree to the TLS upgrade
-    socket.add(AdbProtocol.generateStls());
-    await socket.flush();
+    await transport.write(AdbProtocol.generateStls());
     if (verbose) print('Sent STLS response, performing TLS handshake...');
 
-    // Pause the plaintext listener so SecureSocket can take over the socket
-    // without closing the underlying connection.
-    _socketDataSubscription?.pause();
-
-    // Create a SecurityContext with a self-signed certificate from our RSA keypair
-    final securityContext = AdbCertificate.createTransportSecurityContext(crypto.keyPair);
-
     try {
-      // Upgrade the socket to TLS
-      final secureSocket = await SecureSocket.secure(
-        socket,
-        context: securityContext,
-        onBadCertificate: (_) => true, // Accept device's self-signed certificate
-      );
+      if (transport is! AdbTlsTransport) {
+        throw UnsupportedError(
+          'The configured ADB transport does not support TLS upgrades',
+        );
+      }
 
-      // Clear any plaintext parser state before the TLS socket takes over.
+      await transport.upgradeToTls();
       _inputBuffer.clear();
-
-      // Re-attach the listener to the new SecureSocket
-      _socketDataSubscription = secureSocket.listen(
-        _handleAdbInput,
-        onDone: () {
-          _socketConnected = false;
-          _socketConnectedController.add(_socketConnected);
-        },
-        onError: (error) {
-          _socketConnected = false;
-          _socketConnectedController.add(_socketConnected);
-        },
-      );
-
-      // Replace the socket reference
-      _socket = secureSocket;
       _tlsEnabled = true;
 
       if (verbose) print('TLS handshake complete, waiting for device CNXN...');
@@ -331,8 +358,8 @@ class AdbConnection {
       if (verbose) {
         print('TLS handshake failed: $e');
       }
-      _socketConnected = false;
-      _socketConnectedController.add(_socketConnected);
+      _transportConnected = false;
+      _transportConnectedController.add(_transportConnected);
       _adbConnectedController.add(false);
     }
   }
@@ -353,7 +380,10 @@ class AdbConnection {
     AdbStream stream = AdbStream(localId, this);
     openStreams[localId] = stream;
     await sendMessage(AdbProtocol.generateOpen(localId, destination));
-    if (await stream.onWriteReady.first.timeout(const Duration(seconds: 10), onTimeout: () => false)) {
+    if (await stream.onWriteReady.first.timeout(
+      const Duration(seconds: 10),
+      onTimeout: () => false,
+    )) {
       return stream;
     } else {
       throw Exception('Stream open failed or refused by remote peer');

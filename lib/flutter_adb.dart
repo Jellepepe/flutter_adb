@@ -14,6 +14,8 @@ export 'package:flutter_adb/adb_connection.dart';
 export 'package:flutter_adb/adb_crypto.dart';
 export 'package:flutter_adb/adb_pairing.dart';
 export 'package:flutter_adb/adb_stream.dart';
+export 'package:flutter_adb/adb_transport.dart';
+export 'package:flutter_adb/dart_socket_adb_transport.dart';
 
 class Adb {
   /// Convenience method to open an ADB connection, open a shell and send a single command, then closing the connection.
@@ -32,7 +34,9 @@ class Adb {
     String finalCommand = '$command;exit\n';
     AdbStream stream = await connection.openShell();
     await stream.writeString(finalCommand);
-    String output = await stream.onPayload.fold('', (previous, element) => previous + utf8.decode(element)).timeout(
+    String output = await stream.onPayload
+        .fold('', (previous, element) => previous + utf8.decode(element))
+        .timeout(
       const Duration(minutes: 1),
       onTimeout: () {
         print('Timeout closing the stream.');
@@ -43,7 +47,9 @@ class Adb {
     await connection.disconnect();
     // Sanitize output
     output = output.replaceAll('\r', '');
-    output.endsWith('\n') ? output = output.substring(0, output.length - 1) : output;
+    output.endsWith('\n')
+        ? output = output.substring(0, output.length - 1)
+        : output;
     return output.split(finalCommand).last.trim();
   }
 }
